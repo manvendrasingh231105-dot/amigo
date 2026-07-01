@@ -1,0 +1,6 @@
+{
+  "name": "Amigo",
+  "description": "An interactive, neobrutalist, location-based social platform featuring spontaneous real-world connections via high-contrast Bento grid layouts, radar hotspots, and privacy controllers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,65 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-amigo-bg: #fdfaf7;
+  --color-amigo-dark: #1a1a1a;
+  --color-amigo-accent: #FF6B35;
+  --color-amigo-blue: #E7F5FF;
+  --color-amigo-gray-light: #f7f4f0;
+  --color-amigo-green: #10B981;
+  
+  --color-amigo-purple: #FF6B35; /* Bento Primary override */
+  --color-amigo-purple-hover: #e0531f;
+  --color-amigo-card: #ffffff;
+  --color-amigo-badge: #E7F5FF;
+}
+
+/* Custom overlay or scrollbar adjustments */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #fdfaf7;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a1a1a;
+  border-radius: 9999px;
+  border: 2px solid #fdfaf7;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FF6B35;
+}
+
+/* Hard Drop Shadows (Neobrutalism Style) */
+.neo-shadow {
+  box-shadow: 8px 8px 0px 0px rgba(26, 26, 26, 1);
+}
+.neo-shadow-sm {
+  box-shadow: 4px 4px 0px 0px rgba(26, 26, 26, 1);
+}
+.neo-shadow-orange {
+  box-shadow: 8px 8px 0px 0px rgba(255, 107, 53, 1);
+}
+.neo-shadow-orange-sm {
+  box-shadow: 4px 4px 0px 0px rgba(255, 107, 53, 1);
+}
+.neo-shadow-white {
+  box-shadow: 6px 6px 0px 0px rgba(255, 255, 255, 1);
+}
+.neo-border {
+  border: 2px solid #1a1a1a;
+}
+.neo-border-thick {
+  border: 3px solid #1a1a1a;
+}
+.neo-border-accent {
+  border: 2px solid #FF6B35;
+}
+
+

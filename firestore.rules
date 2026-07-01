@@ -1,0 +1,136 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global lock default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global helper primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isProfileOwner(userId, data) {
+      return isSignedIn() && (
+        request.auth.uid == userId ||
+        (request.auth.token.email != null && data.get('email', null) != null && request.auth.token.email == data.email)
+      );
+    }
+
+    function isSeedUser(userId) {
+      return userId in [
+        'usr_priya_sharma_gmail_com',
+        'usr_arjun_mehta_gmail_com',
+        'usr_nisha_patel_gmail_com',
+        'usr_rohan_kumar_gmail_com',
+        'usr_kavya_reddy_gmail_com'
+      ];
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity validator blueprints to guarantee type safety and prevent Denial of Wallet payload insertions
+    function isValidUser(data) {
+      return data.get('id', null) != null
+        && data.id is string && data.id.size() <= 128
+        && data.get('name', null) != null
+        && data.name is string && data.name.size() <= 100
+        && data.get('avatar', null) != null
+        && data.avatar is string && data.avatar.size() <= 10
+        && data.get('avatarColor', null) != null
+        && data.avatarColor is string && data.avatarColor.size() <= 100
+        && data.get('trustScore', null) != null
+        && data.trustScore is number
+        && data.get('title', null) != null
+        && data.title is string && data.title.size() <= 100
+        && data.get('email', null) != null
+        && data.email is string && data.email.size() <= 150
+        && (data.get('statusText', null) == null || data.statusText is string && data.statusText.size() <= 280)
+        && (data.get('statusType', null) == null || data.statusType is string && data.statusType.size() <= 50)
+        && (data.get('location', null) == null || data.location is string && data.location.size() <= 100)
+        && (data.get('role', null) == null || data.role in ['user', 'admin'])
+        && (data.get('meetsCount', null) == null || data.meetsCount is number)
+        && (data.get('xp', null) == null || data.xp is number)
+        && (data.get('level', null) == null || data.level is number)
+        && (data.get('bio', null) == null || data.bio is string && data.bio.size() <= 500);
+    }
+
+    function isValidHotspot(data) {
+      return data.keys().hasAll(['id', 'name', 'icon', 'activeCount', 'limit', 'description', 'x', 'y'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 100
+        && data.icon is string && data.icon.size() <= 50
+        && data.activeCount is number
+        && data.limit is number
+        && data.description is string && data.description.size() <= 200
+        && data.x is number
+        && data.y is number;
+    }
+
+    function isValidEvent(data) {
+      return data.keys().hasAll(['id', 'title', 'location', 'organizer', 'rsvps', 'maxRsvps', 'startTime', 'isLive'])
+        && data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 150
+        && data.location is string && data.location.size() <= 150
+        && data.organizer is string && data.organizer.size() <= 100
+        && data.rsvps is list
+        && data.maxRsvps is number
+        && data.startTime is string && data.startTime.size() <= 100
+        && data.isLive is bool;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['id', 'senderId', 'senderName', 'text', 'timestamp'])
+        && data.id is string && data.id.size() <= 128
+        && data.senderId is string && data.senderId.size() <= 128
+        && data.senderName is string && data.senderName.size() <= 100
+        && data.text is string && data.text.size() <= 1000
+        && data.timestamp is string && data.timestamp.size() <= 100;
+    }
+
+    // 1. Users Profile Collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if (isProfileOwner(userId, incoming()) || isSeedUser(userId)) && isValidUser(incoming());
+      allow update: if isProfileOwner(userId, existing()) && incoming().email == existing().email && isValidUser(incoming()); 
+      allow delete: if isProfileOwner(userId, existing());
+    }
+
+    // 2. Hotspots Metrics (Capacity)
+    match /hotspots/{hotspotId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isSignedIn();
+      allow update: if isSignedIn() && isValidHotspot(incoming());
+    }
+
+    // 3. Spontaneous Event Meetups & RSVPs
+    match /events/{eventId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidEvent(incoming());
+      allow update: if isSignedIn() && isValidEvent(incoming());
+      allow delete: if isSignedIn();
+    }
+
+    // 4. Temporary mesh chats
+    match /chats/{chatId}/messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidMessage(incoming());
+    }
+  }
+}

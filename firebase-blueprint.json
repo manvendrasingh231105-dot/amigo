@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Student presence status metrics and personalization parameters",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "avatarColor": { "type": "string" },
+        "trustScore": { "type": "number" },
+        "title": { "type": "string" },
+        "statusText": { "type": "string" },
+        "statusType": { "type": "string" },
+        "location": { "type": "string" },
+        "timeAgo": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "email": { "type": "string" },
+        "meetsCount": { "type": "number" },
+        "meetsThisWeek": { "type": "number" },
+        "xp": { "type": "number" },
+        "level": { "type": "number" },
+        "bio": { "type": "string" }
+      },
+      "required": ["id", "name", "avatar", "avatarColor", "trustScore", "title", "email"]
+    },
+    "Hotspot": {
+      "title": "Hotspot",
+      "description": "Campus student common study/food hotspot zones with capacity limits",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "icon": { "type": "string" },
+        "activeCount": { "type": "number" },
+        "limit": { "type": "number" },
+        "description": { "type": "string" },
+        "subZones": { "type": "array" },
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      },
+      "required": ["id", "name", "icon", "activeCount", "limit", "description", "x", "y"]
+    },
+    "Event": {
+      "title": "Event",
+      "description": "Shared campus student activities and RSVPs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "location": { "type": "string" },
+        "organizer": { "type": "string" },
+        "rsvps": { "type": "array" },
+        "maxRsvps": { "type": "number" },
+        "startTime": { "type": "string" },
+        "isLive": { "type": "boolean" },
+        "alertSent": { "type": "boolean" }
+      },
+      "required": ["id", "title", "location", "organizer", "rsvps", "maxRsvps", "startTime", "isLive"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Encrypted dynamic handshake chat text entries",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "senderId", "senderName", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of student presence records"
+    },
+    "/hotspots/{hotspotId}": {
+      "schema": "Hotspot",
+      "description": "Collection of geographical campus hotspots"
+    },
+    "/events/{eventId}": {
+      "schema": "Event",
+      "description": "Campus events schedule registry"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Temporary peer handshake chat messages"
+    }
+  }
+}
