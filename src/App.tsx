@@ -76,6 +76,16 @@ export default function App() {
     localStorage.removeItem('amigo_session');
     setSessionUser(null);
     setFirebaseUser(null);
+    setStatsLoaded(false);
+    setStats({
+      meetsCount: 0,
+      trustScore: 0,
+      meetsThisWeek: 0,
+      xp: 0,
+      level: 1,
+      title: 'Newcomer',
+      bio: ''
+    });
   };
 
   // Pre-populated high-quality realistic campus student mock data reflecting Screenshot 7
@@ -183,14 +193,18 @@ export default function App() {
 
   // Live gamification statistics module
   const [stats, setStats] = useState<UserStats>({
-    meetsCount: 18,
-    trustScore: 4.3,
+    meetsCount: 0,
+    trustScore: 0,
     meetsThisWeek: 0,
-    xp: 1420,
-    level: 7,
-    title: 'Rising Star',
-    bio: 'Explorer, builder, always up for a good conversation'
+    xp: 0,
+    level: 1,
+    title: 'Newcomer',
+    bio: ''
   });
+
+  // Tracks whether we've loaded this user's real stats from Firestore yet,
+  // so we don't overwrite their saved progress with defaults or write too early
+  const [statsLoaded, setStatsLoaded] = useState(false);
 
   // Toggle left workspace layouts
   const [leftTab, setLeftTab] = useState<'specs' | 'admin'>('specs');
@@ -384,6 +398,52 @@ export default function App() {
       }).catch(err => console.error("Error clearing status in Firestore:", err));
     }
   }, [currentMyStatus, sessionUser, firebaseUser]);
+
+  // Load this user's real progression (level, XP, meets, trust score) from
+  // Firestore once per login, so it reflects their actual account instead of
+  // placeholder demo numbers. Note: presence/status is intentionally NOT
+  // restored here - the user must broadcast a status manually each session.
+  useEffect(() => {
+    if (!sessionUser || !firebaseUser || statsLoaded) return;
+
+    const safeId = 'usr_' + sessionUser.email.trim().toLowerCase().replace(/[^a-zA-Z0-9_-]/g, '_');
+    getDoc(doc(db, 'users', safeId)).then((snap) => {
+      if (snap.exists()) {
+        const uData = snap.data();
+        setStats({
+          meetsCount: uData.meetsCount ?? 0,
+          trustScore: uData.trustScore ?? 0,
+          meetsThisWeek: 0,
+          xp: uData.xp ?? 0,
+          level: uData.level ?? 1,
+          title: uData.title || 'Newcomer',
+          bio: uData.bio || ''
+        });
+      }
+      setStatsLoaded(true);
+    }).catch(err => {
+      console.error("Failed to load user stats from Firestore:", err);
+      setStatsLoaded(true);
+    });
+  }, [sessionUser, firebaseUser, statsLoaded]);
+
+  // Persist stat changes (XP/level/meets gained from check-ins and RSVPs)
+  // back to Firestore, once the initial load above has completed - this
+  // prevents a race where we'd overwrite real data with defaults.
+  useEffect(() => {
+    if (!sessionUser || !firebaseUser || !statsLoaded) return;
+
+    const safeId = 'usr_' + sessionUser.email.trim().toLowerCase().replace(/[^a-zA-Z0-9_-]/g, '_');
+    const userRef = doc(db, 'users', safeId);
+    updateDoc(userRef, {
+      meetsCount: stats.meetsCount,
+      xp: stats.xp,
+      level: stats.level,
+      trustScore: stats.trustScore,
+      title: stats.title,
+      bio: stats.bio
+    }).catch(err => console.error("Failed to persist stats to Firestore:", err));
+  }, [stats, sessionUser, firebaseUser, statsLoaded]);
 
   // Render centered spinner/loading security wall while resolving Firebase session caches
   if (isAuthChecking) {
