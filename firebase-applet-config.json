@@ -1,10 +1,10 @@
 {
-  "projectId": "amplified-torch-rrwfn",
-  "appId": "1:952510663168:web:0d864562cafab0cf8626e5",
-  "apiKey": "AIzaSyD1NJY0LzLBtNuLt6238yUcVkdaFsfqZTU",
-  "authDomain": "amplified-torch-rrwfn.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-746c23aa-7895-4eab-a57f-92536be96cb3",
-  "storageBucket": "amplified-torch-rrwfn.firebasestorage.app",
-  "messagingSenderId": "952510663168",
-  "measurementId": ""
+  "projectId": "amigo-app-c2b42",
+  "appId": "1:663839488267:web:d2147f385d8b889e8f0a0e",
+  "apiKey": "AIzaSyATZLNg4dDZH3fl9GCrZD1hmsJy2WnV110",
+  "authDomain": "amigo-app-c2b42.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "amigo-app-c2b42.firebasestorage.app",
+  "messagingSenderId": "663839488267",
+  "measurementId": "G-52SS5W43LD"
 }
