@@ -5,7 +5,8 @@ import AuthGate from './components/AuthGate';
 import { Info, Wifi, BookOpen, Layers, LogOut, Key, ShieldCheck } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, doc, onSnapshot, setDoc, updateDoc, writeBatch, getDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, getDoc } from 'firebase/firestore';
+import { computeLevelFromXp, emailToSafeId } from './utils';
 
 export default function App() {
   // Firebase Authentication State Tracking
@@ -177,6 +178,9 @@ export default function App() {
 
   // Simulating administrative alerts pushed live across WS STOMP pings
   const [broadcastAlert, setBroadcastAlert] = useState<string | null>(null);
+  // Private feedback for admin actions (e.g. "User blocked.") - NOT the
+  // same as broadcastAlert, which is a public campus-wide banner.
+  const [adminNotice, setAdminNotice] = useState<string | null>(null);
 
   // Settings configs
   const [privacy, setPrivacy] = useState<PrivacySettings>({
@@ -242,6 +246,16 @@ export default function App() {
           list.push(d.data() as User);
         });
         setUsers(list);
+
+        // If an admin blocks this user while they're mid-session, sign them
+        // out immediately rather than waiting for their next login attempt.
+        if (sessionUser) {
+          const me = list.find(u => u.email?.toLowerCase() === sessionUser.email.toLowerCase());
+          if (me?.blocked) {
+            showAdminNotice('Your account has been blocked by an administrator.');
+            handleLogout();
+          }
+        }
       }
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'users');
@@ -338,6 +352,167 @@ export default function App() {
       // Client offline fallback
       setEvents(prev => [event, ...prev]);
     }
+  };
+
+  // ===== ADMIN ACTIONS =====
+  // All of these are also enforced server-side in firestore.rules via
+  // isAdmin() - the UI only decides who SEES these controls, the rules
+  // decide who can actually perform them.
+
+  const handleAdminClearUserStatus = async (userId: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        statusText: '',
+        statusType: '',
+        location: '',
+        timeAgo: ''
+      });
+      showAdminNotice('Status cleared for that user.');
+    } catch (e) {
+      console.error('Admin clear status failed:', e);
+      showAdminNotice('Failed to clear status - check console for details.');
+    }
+  };
+
+  const handleAdminToggleBlockUser = async (userId: string, blocked: boolean) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), { blocked });
+      showAdminNotice(blocked ? 'User blocked.' : 'User unblocked.');
+    } catch (e) {
+      console.error('Admin block/unblock failed:', e);
+      showAdminNotice('Failed to update block status - check console for details.');
+    }
+  };
+
+  const handleAdminAwardXp = async (userId: string, amount: number) => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const snap = await getDoc(userRef);
+      if (!snap.exists()) {
+        showAdminNotice('That user could not be found.');
+        return;
+      }
+      const data = snap.data();
+      const newXp = Math.max(0, (data.xp || 0) + amount);
+      await updateDoc(userRef, {
+        xp: newXp,
+        level: computeLevelFromXp(newXp)
+      });
+      showAdminNotice(`Awarded ${amount} XP.`);
+    } catch (e) {
+      console.error('Admin XP award failed:', e);
+      showAdminNotice('Failed to award XP - check console for details.');
+    }
+  };
+
+  const handleAdminEditHotspot = async (id: string, updates: Partial<Hotspot>) => {
+    try {
+      await updateDoc(doc(db, 'hotspots', id), updates);
+      showAdminNotice('Hotspot updated.');
+    } catch (e) {
+      console.error('Admin hotspot edit failed:', e);
+      showAdminNotice('Failed to update hotspot - check console for details.');
+    }
+  };
+
+  const handleAdminAddHotspot = async (hotspot: Hotspot) => {
+    try {
+      await setDoc(doc(db, 'hotspots', hotspot.id), hotspot);
+      showAdminNotice(`Hotspot "${hotspot.name}" created.`);
+    } catch (e) {
+      console.error('Admin add hotspot failed:', e);
+      showAdminNotice('Failed to create hotspot - check console for details.');
+    }
+  };
+
+  const handleAdminDeleteHotspot = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'hotspots', id));
+      showAdminNotice('Hotspot deleted.');
+    } catch (e) {
+      console.error('Admin delete hotspot failed:', e);
+      showAdminNotice('Failed to delete hotspot - check console for details.');
+    }
+  };
+
+  const handleAdminEditEvent = async (id: string, updates: Partial<Event>) => {
+    try {
+      await updateDoc(doc(db, 'events', id), updates);
+      showAdminNotice('Event updated.');
+    } catch (e) {
+      console.error('Admin event edit failed:', e);
+      showAdminNotice('Failed to update event - check console for details.');
+    }
+  };
+
+  const handleAdminAddEvent = async (event: Event) => {
+    try {
+      await setDoc(doc(db, 'events', event.id), event);
+      showAdminNotice(`Event "${event.title}" created.`);
+    } catch (e) {
+      console.error('Admin add event failed:', e);
+      showAdminNotice('Failed to create event - check console for details.');
+    }
+  };
+
+  const handleAdminDeleteEvent = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'events', id));
+      showAdminNotice('Event deleted.');
+    } catch (e) {
+      console.error('Admin delete event failed:', e);
+      showAdminNotice('Failed to delete event - check console for details.');
+    }
+  };
+
+  // Grants admin rights to any registered user by email. Requires that
+  // person to already have a student profile (they must have registered
+  // at least once) - creates both the /users role flag and the /admins
+  // registry doc that the security rules check.
+  const handleAdminGrantAdmin = async (targetEmail: string) => {
+    const email = targetEmail.trim().toLowerCase();
+    if (!email) return;
+    const safeId = emailToSafeId(email);
+    try {
+      const userRef = doc(db, 'users', safeId);
+      const snap = await getDoc(userRef);
+      if (!snap.exists()) {
+        showAdminNotice(`No registered user found for "${email}". They need to register first.`);
+        return;
+      }
+      await updateDoc(userRef, { role: 'admin' });
+      await setDoc(doc(db, 'admins', email), {
+        grantedBy: sessionUser?.email || 'unknown',
+        grantedAt: new Date().toISOString()
+      }, { merge: true });
+      showAdminNotice(`${email} is now an admin.`);
+    } catch (e) {
+      console.error('Admin grant failed:', e);
+      showAdminNotice('Failed to grant admin role - check console for details.');
+    }
+  };
+
+  const handleAdminRevokeAdmin = async (targetEmail: string) => {
+    const email = targetEmail.trim().toLowerCase();
+    if (!email) return;
+    if (sessionUser && email === sessionUser.email.toLowerCase()) {
+      showAdminNotice("You can't revoke your own admin access from here.");
+      return;
+    }
+    const safeId = emailToSafeId(email);
+    try {
+      await updateDoc(doc(db, 'users', safeId), { role: 'user' });
+      await deleteDoc(doc(db, 'admins', email));
+      showAdminNotice(`${email}'s admin access has been revoked.`);
+    } catch (e) {
+      console.error('Admin revoke failed:', e);
+      showAdminNotice('Failed to revoke admin role - check console for details.');
+    }
+  };
+
+  const showAdminNotice = (message: string) => {
+    setAdminNotice(message);
+    setTimeout(() => setAdminNotice(null), 4000);
   };
 
   // Sync client profile checkin actions to trigger real-time achievements level modifications
@@ -545,6 +720,18 @@ export default function App() {
             setBroadcastAlert={setBroadcastAlert}
             onUpdateHotspotLimit={handleUpdateHotspotLimit}
             onSendBroadcast={handlePushBroadcastToSimul}
+            adminNotice={adminNotice}
+            onAdminClearUserStatus={handleAdminClearUserStatus}
+            onAdminToggleBlockUser={handleAdminToggleBlockUser}
+            onAdminAwardXp={handleAdminAwardXp}
+            onAdminEditHotspot={handleAdminEditHotspot}
+            onAdminAddHotspot={handleAdminAddHotspot}
+            onAdminDeleteHotspot={handleAdminDeleteHotspot}
+            onAdminEditEvent={handleAdminEditEvent}
+            onAdminAddEvent={handleAdminAddEvent}
+            onAdminDeleteEvent={handleAdminDeleteEvent}
+            onAdminGrantAdmin={handleAdminGrantAdmin}
+            onAdminRevokeAdmin={handleAdminRevokeAdmin}
             currentMyStatus={currentMyStatus}
             setCurrentMyStatus={setCurrentMyStatus}
             handshakeState={handshakeState}

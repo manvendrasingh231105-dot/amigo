@@ -33,6 +33,29 @@ service cloud.firestore {
       ];
     }
 
+    // Admin status is tracked via a dedicated /admins/{email} collection
+    // (doc ID = the signed-in user's exact email). This lets rules verify
+    // admin status via a direct exists() lookup, since Firestore rules can't
+    // derive the "usr_" + sanitized-email document ID used by /users/{id}.
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.email != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.token.email));
+    }
+
+    // These emails mirror the hardcoded admin allowlist in AuthGate.tsx.
+    // They're allowed to self-provision their OWN /admins/{email} doc the
+    // first time they log in, solving the bootstrap problem (an admin doc
+    // normally can only be created by an existing admin, but the very first
+    // admin has none yet). They can never create a doc for a DIFFERENT email.
+    function isBootstrapAdmin() {
+      return isSignedIn() && request.auth.token.email in [
+        'manvendrasingh17791@gmail.com',
+        'manvendrasingh231105@gmail.com',
+        'coordinator.safety@amigo.edu'
+      ];
+    }
+
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
@@ -108,23 +131,35 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create: if (isProfileOwner(userId, incoming()) || isSeedUser(userId)) && isValidUser(incoming());
-      allow update: if isProfileOwner(userId, existing()) && incoming().email == existing().email && isValidUser(incoming()); 
-      allow delete: if isProfileOwner(userId, existing());
+      // Owners can update their own profile (email must stay fixed).
+      // Admins can update ANY profile (block/unblock, clear status, award XP, grant/revoke admin role).
+      allow update: if isValidUser(incoming()) && (
+        (isProfileOwner(userId, existing()) && incoming().email == existing().email)
+        || isAdmin()
+      );
+      allow delete: if isProfileOwner(userId, existing()) || isAdmin();
     }
 
-    // 2. Hotspots Metrics (Capacity)
+    // 1b. Admin registry - doc ID is the admin's exact email address.
+    // Existence of a doc here grants that email admin rights everywhere.
+    match /admins/{email} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || (isBootstrapAdmin() && request.auth.token.email == email);
+    }
+
+    // 2. Hotspots Metrics (Capacity) - admin-managed only
     match /hotspots/{hotspotId} {
       allow read: if isSignedIn();
-      allow create, delete: if isSignedIn();
-      allow update: if isSignedIn() && isValidHotspot(incoming());
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() && isValidHotspot(incoming());
     }
 
-    // 3. Spontaneous Event Meetups & RSVPs
+    // 3. Spontaneous Event Meetups & RSVPs - admin-managed only
     match /events/{eventId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidEvent(incoming());
-      allow update: if isSignedIn() && isValidEvent(incoming());
-      allow delete: if isSignedIn();
+      allow create: if isAdmin() && isValidEvent(incoming());
+      allow update: if isAdmin() && isValidEvent(incoming());
+      allow delete: if isAdmin();
     }
 
     // 4. Temporary mesh chats

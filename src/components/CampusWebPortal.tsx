@@ -35,6 +35,8 @@ import {
   Calendar
 } from 'lucide-react';
 import { User as AmigoUser, Hotspot, PrivacySettings, UserStats, Achievement, Event } from '../types';
+import { computeLevelFromXp } from '../utils';
+import AdminConsole from './AdminConsole';
 
 interface DesktopWebAppProps {
   users: AmigoUser[];
@@ -51,6 +53,20 @@ interface DesktopWebAppProps {
   setBroadcastAlert: (alert: string | null) => void;
   onUpdateHotspotLimit: (id: string, limit: number) => void;
   onSendBroadcast: (message: string) => void;
+
+  // Admin controls (only meaningful/visible when sessionUser.role === 'admin')
+  adminNotice: string | null;
+  onAdminClearUserStatus: (userId: string) => void;
+  onAdminToggleBlockUser: (userId: string, blocked: boolean) => void;
+  onAdminAwardXp: (userId: string, amount: number) => void;
+  onAdminEditHotspot: (id: string, updates: Partial<Hotspot>) => void;
+  onAdminAddHotspot: (hotspot: Hotspot) => void;
+  onAdminDeleteHotspot: (id: string) => void;
+  onAdminEditEvent: (id: string, updates: Partial<Event>) => void;
+  onAdminAddEvent: (event: Event) => void;
+  onAdminDeleteEvent: (id: string) => void;
+  onAdminGrantAdmin: (email: string) => void;
+  onAdminRevokeAdmin: (email: string) => void;
   
   // Shared States for perfect Omni-channel Device synchronization
   currentMyStatus: { text: string; type: string } | null;
@@ -73,11 +89,6 @@ interface DesktopWebAppProps {
   } | null;
 }
 
-// Every 200 XP earned levels the user up by 1, starting at Level 1 with 0 XP.
-// Meets (checking in / going visible) grant +50 XP, event RSVPs grant +10 XP.
-const XP_PER_LEVEL = 200;
-const computeLevelFromXp = (xp: number) => 1 + Math.floor(Math.max(0, xp) / XP_PER_LEVEL);
-
 export default function DesktopWebApp({
   users,
   setUsers,
@@ -93,6 +104,18 @@ export default function DesktopWebApp({
   setBroadcastAlert,
   onUpdateHotspotLimit,
   onSendBroadcast,
+  adminNotice,
+  onAdminClearUserStatus,
+  onAdminToggleBlockUser,
+  onAdminAwardXp,
+  onAdminEditHotspot,
+  onAdminAddHotspot,
+  onAdminDeleteHotspot,
+  onAdminEditEvent,
+  onAdminAddEvent,
+  onAdminDeleteEvent,
+  onAdminGrantAdmin,
+  onAdminRevokeAdmin,
   currentMyStatus,
   setCurrentMyStatus,
   handshakeState,
@@ -505,8 +528,32 @@ export default function DesktopWebApp({
             <ShieldCheck size={13} />
             <span>Privacy & Safety</span>
           </button>
+
+          {sessionUser?.role === 'admin' && (
+            <button
+              onClick={() => setWebActiveTab('admin')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition border-2 flex items-center gap-1.5 cursor-pointer ${
+                webActiveTab === 'admin'
+                  ? 'bg-indigo-600 text-white border-[#1a1a1a] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]'
+                  : 'bg-white text-indigo-700 border-indigo-200 hover:border-[#1a1a1a] hover:text-indigo-900'
+              }`}
+            >
+              <Shield size={13} />
+              <span>Admin Console</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Private admin action feedback (block confirmations, errors, etc.) */}
+      {adminNotice && (
+        <div className="bg-indigo-50 border-b-2 border-indigo-900 px-6 py-2 flex items-center justify-between shrink-0">
+          <p className="text-xs font-bold text-indigo-900 flex items-center gap-2">
+            <Shield size={13} />
+            {adminNotice}
+          </p>
+        </div>
+      )}
 
       {/* Main Content Areas based on tabs */}
       <div className="flex-1 flex flex-col bg-[#fdfaf7] text-left">
@@ -1261,6 +1308,27 @@ export default function DesktopWebApp({
 
             </div>
           </div>
+        )}
+
+        {/* =============== Admin Console Tab =============== */}
+        {webActiveTab === 'admin' && sessionUser?.role === 'admin' && (
+          <AdminConsole
+            users={users}
+            hotspots={hotspots}
+            events={events}
+            currentAdminEmail={sessionUser.email}
+            onClearUserStatus={onAdminClearUserStatus}
+            onToggleBlockUser={onAdminToggleBlockUser}
+            onAwardXp={onAdminAwardXp}
+            onEditHotspot={onAdminEditHotspot}
+            onAddHotspot={onAdminAddHotspot}
+            onDeleteHotspot={onAdminDeleteHotspot}
+            onEditEvent={onAdminEditEvent}
+            onAddEvent={onAdminAddEvent}
+            onDeleteEvent={onAdminDeleteEvent}
+            onGrantAdmin={onAdminGrantAdmin}
+            onRevokeAdmin={onAdminRevokeAdmin}
+          />
         )}
 
       </div>

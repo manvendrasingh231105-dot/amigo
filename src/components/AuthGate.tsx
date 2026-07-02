@@ -238,6 +238,14 @@ export default function AuthGate({ onLogin }: AuthGateProps) {
       }
 
       const userData = userDoc.data();
+
+      if (userData.blocked === true) {
+        await auth.signOut();
+        setAuthError('Your account has been blocked by an administrator and can no longer sign in to Amigo.');
+        setIsProcessing(false);
+        return;
+      }
+
       const pendingData = {
         email: userData.email,
         name: userData.name,
@@ -299,6 +307,15 @@ export default function AuthGate({ onLogin }: AuthGateProps) {
 
       const safeId = 'usr_' + email.replace(/[^a-zA-Z0-9_-]/g, '_');
 
+      // Provision this email in the /admins registry so Firestore security
+      // rules recognize this account as an admin for write permissions
+      // (blocking users, editing hotspots/events, awarding XP, etc).
+      // Safe to call every login - merge:true just keeps the doc present.
+      await setDoc(doc(db, 'admins', email), {
+        grantedAt: new Date().toISOString(),
+        bootstrap: true
+      }, { merge: true }).catch(e => console.error('Failed to provision admin registry doc:', e));
+
       // Check / Upsert admin profile in Firestore
       const userRef = doc(db, 'users', safeId);
       const userDoc = await getDoc(userRef);
@@ -317,11 +334,11 @@ export default function AuthGate({ onLogin }: AuthGateProps) {
           email,
           location: 'Main Administration Office',
           role: 'admin',
-          statusText: 'Admin Active',
-          statusType: 'Coding',
-          meetsCount: 100,
-          xp: 10000,
-          level: 100,
+          statusText: '',
+          statusType: '',
+          meetsCount: 0,
+          xp: 0,
+          level: 1,
           bio: 'Global Spontaneous Grid Curator'
         });
       }

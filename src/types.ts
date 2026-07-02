@@ -12,6 +12,13 @@ export interface User {
   handshakeState?: "none" | "sent" | "received" | "accepted";
   handshakeMessage?: string;
   pingText?: string;
+  email?: string;
+  role?: "user" | "admin";
+  blocked?: boolean;
+  xp?: number;
+  level?: number;
+  meetsCount?: number;
+  bio?: string;
 }
 
 export interface Hotspot {
