@@ -51,11 +51,16 @@ export default function AdminConsole({
   const [newEvent, setNewEvent] = useState<Partial<Event>>({ maxRsvps: 20, isLive: true });
   const [roleEmail, setRoleEmail] = useState('');
 
+  // Only this account can grant/revoke admin access for other people.
+  // Every other admin sees and can use every other tab.
+  const SUPER_ADMIN_EMAIL = 'manvendrasingh17791@gmail.com';
+  const isSuperAdmin = currentAdminEmail.toLowerCase() === SUPER_ADMIN_EMAIL;
+
   const subTabs: { key: typeof subTab; label: string }[] = [
     { key: 'users', label: 'Users & Status' },
     { key: 'hotspots', label: 'Hotspots' },
     { key: 'events', label: 'Meetups & Events' },
-    { key: 'roles', label: 'Admin Roles' }
+    ...(isSuperAdmin ? [{ key: 'roles' as const, label: 'Admin Roles' }] : [])
   ];
 
   return (
@@ -454,8 +459,8 @@ export default function AdminConsole({
         </div>
       )}
 
-      {/* ===== ROLES ===== */}
-      {subTab === 'roles' && (
+      {/* ===== ROLES (super admin only) ===== */}
+      {subTab === 'roles' && isSuperAdmin && (
         <div className="max-w-2xl space-y-4">
           <div className="bg-white border-2 border-[#1a1a1a] rounded-2xl p-5 shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] space-y-3">
             <span className="font-mono text-[9px] font-black text-indigo-900 uppercase">Grant / revoke admin access</span>

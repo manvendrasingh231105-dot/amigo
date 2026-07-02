@@ -380,7 +380,9 @@ export default function DesktopWebApp({
 
   // Filter peers by selected hotspot index mapping
   const getFilteredPeers = () => {
-    let result = users;
+    // Only show peers who have manually broadcast a real status - never
+    // show someone as "available" just because they're registered.
+    let result = users.filter(u => !!u.statusText && !!u.statusType && !u.blocked);
 
     if (selectedHotspotId) {
       const selectedSpot = hotspots.find(h => h.id === selectedHotspotId);
@@ -766,7 +768,7 @@ export default function DesktopWebApp({
                                 {user.trustScore} ★ trust
                               </span>
                             </div>
-                            <span className="text-[9px] font-mono text-gray-400 font-bold uppercase mt-1 block">Level {user.id === 'usr-priya' ? 9 : 4} · {user.title}</span>
+                            <span className="text-[9px] font-mono text-gray-400 font-bold uppercase mt-1 block">Level {user.level ?? 1} · {user.title}</span>
                           </div>
                         </div>
 
@@ -781,7 +783,7 @@ export default function DesktopWebApp({
                       {/* Status Dialogue Bubbles */}
                       <div className="my-3 text-xs text-[#1a1a1a] bg-[#f7f4f0] p-2.5 rounded-2xl border-2 border-[#1a1a1a] flex gap-1.5 items-start font-semibold">
                         <span className="text-[#FF6B35]">💬</span>
-                        <p className="italic font-bold">"{user.statusText || 'Available to grab coffee and chat!'}"</p>
+                        <p className="italic font-bold">"{user.statusText}"</p>
                       </div>
 
                       {/* Card Footer Detail */}

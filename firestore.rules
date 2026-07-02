@@ -56,6 +56,17 @@ service cloud.firestore {
       ];
     }
 
+    // Only this single account can grant/revoke admin rights for OTHER
+    // people, or change any user's role field. Every other admin can use
+    // every other admin capability, just not this one.
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.email == 'manvendrasingh17791@gmail.com';
+    }
+
+    function roleUnchanged() {
+      return incoming().get('role', 'user') == existing().get('role', 'user');
+    }
+
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
@@ -131,20 +142,25 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create: if (isProfileOwner(userId, incoming()) || isSeedUser(userId)) && isValidUser(incoming());
-      // Owners can update their own profile (email must stay fixed).
-      // Admins can update ANY profile (block/unblock, clear status, award XP, grant/revoke admin role).
+      // Owners can update their own profile (email + role must stay fixed).
+      // Admins can update ANY profile (block/unblock, clear status, award XP) but NOT change role.
+      // Only the super admin can change the role field (grant/revoke admin).
       allow update: if isValidUser(incoming()) && (
-        (isProfileOwner(userId, existing()) && incoming().email == existing().email)
-        || isAdmin()
+        isSuperAdmin()
+        || (isProfileOwner(userId, existing()) && incoming().email == existing().email && roleUnchanged())
+        || (isAdmin() && roleUnchanged())
       );
-      allow delete: if isProfileOwner(userId, existing()) || isAdmin();
+      allow delete: if isProfileOwner(userId, existing()) || isSuperAdmin();
     }
 
     // 1b. Admin registry - doc ID is the admin's exact email address.
     // Existence of a doc here grants that email admin rights everywhere.
+    // Only the super admin can grant/revoke OTHER people's admin access.
+    // The bootstrap admins can still self-provision only their OWN doc on
+    // first login (see isBootstrapAdmin above).
     match /admins/{email} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() || (isBootstrapAdmin() && request.auth.token.email == email);
+      allow write: if isSuperAdmin() || (isBootstrapAdmin() && request.auth.token.email == email);
     }
 
     // 2. Hotspots Metrics (Capacity) - admin-managed only
