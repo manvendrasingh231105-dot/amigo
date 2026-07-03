@@ -87,3 +87,15 @@ export interface MeetRequest {
   status: 'pending' | 'accepted';
   createdAt: string;
 }
+
+// A single chat message, stored at chats/{meetRequestId}/messages/{id}.
+// Only readable/writable by the two participants of that meet request,
+// and only while it's still 'accepted' (see firestore.rules).
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderEmail: string;
+  senderName: string;
+  text: string;
+  timestamp: string;
+}

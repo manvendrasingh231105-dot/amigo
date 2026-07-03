@@ -130,12 +130,27 @@ service cloud.firestore {
     }
 
     function isValidMessage(data) {
-      return data.keys().hasAll(['id', 'senderId', 'senderName', 'text', 'timestamp'])
+      return data.keys().hasAll(['id', 'senderId', 'senderEmail', 'senderName', 'text', 'timestamp'])
         && data.id is string && data.id.size() <= 128
         && data.senderId is string && data.senderId.size() <= 128
+        && data.senderEmail is string && data.senderEmail.size() <= 150
         && data.senderName is string && data.senderName.size() <= 100
-        && data.text is string && data.text.size() <= 1000
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 1000
         && data.timestamp is string && data.timestamp.size() <= 100;
+    }
+
+    // A chat's messages (chats/{meetRequestId}/messages/*) are only
+    // accessible to the two people in that meet request, and only while
+    // the request still exists as 'accepted' - concluding/withdrawing the
+    // meet deletes the request doc, which immediately cuts off chat access.
+    function isMeetParticipant(meetId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/meetRequests/$(meetId))
+        && get(/databases/$(database)/documents/meetRequests/$(meetId)).data.status == 'accepted'
+        && (
+          get(/databases/$(database)/documents/meetRequests/$(meetId)).data.fromEmail == request.auth.token.email
+          || get(/databases/$(database)/documents/meetRequests/$(meetId)).data.toEmail == request.auth.token.email
+        );
     }
 
     function isValidMeetRequest(data) {
@@ -185,3 +200,43 @@ service cloud.firestore {
 
     // 3. Spontaneous Event Meetups & RSVPs - admin-managed only
     match /events/{eventId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidEvent(incoming());
+      allow update: if isAdmin() && isValidEvent(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // 4. Meet chat messages - only the two participants of an accepted meet
+    match /chats/{chatId}/messages/{messageId} {
+      allow read: if isMeetParticipant(chatId);
+      allow create: if isMeetParticipant(chatId)
+        && isValidMessage(incoming())
+        && incoming().senderEmail == request.auth.token.email;
+    }
+
+    // 5. Meet requests (Request Meet / accept / withdraw / conclude flow).
+    // Only the sender can create a request, and only as 'pending', and only
+    // as themselves. Only the RECIPIENT can flip it to 'accepted' - the
+    // sender can't self-approve. Either participant can delete it (used for
+    // withdraw, reject, and concluding an active meet). Exclusivity (one
+    // active request/meet at a time) is enforced client-side by only
+    // showing the Request Meet button when no active request exists - this
+    // rule set focuses on WHO can touch a given request, not how many a
+    // user has, since Firestore rules can't query "how many docs reference
+    // me" without knowing their IDs in advance.
+    match /meetRequests/{requestId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidMeetRequest(incoming())
+        && incoming().status == 'pending'
+        && incoming().fromEmail == request.auth.token.email;
+      allow update: if isSignedIn() && isValidMeetRequest(incoming())
+        && (existing().fromEmail == request.auth.token.email || existing().toEmail == request.auth.token.email)
+        && incoming().fromEmail == existing().fromEmail
+        && incoming().toEmail == existing().toEmail
+        && (incoming().status == existing().status
+            || (incoming().status == 'accepted' && existing().status == 'pending' && existing().toEmail == request.auth.token.email));
+      allow delete: if isSignedIn()
+        && (existing().fromEmail == request.auth.token.email || existing().toEmail == request.auth.token.email);
+    }
+  }
+}

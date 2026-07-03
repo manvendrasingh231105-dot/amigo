@@ -34,7 +34,7 @@ import {
   Info,
   Calendar
 } from 'lucide-react';
-import { User as AmigoUser, Hotspot, PrivacySettings, UserStats, Achievement, Event, MeetRequest } from '../types';
+import { User as AmigoUser, Hotspot, PrivacySettings, UserStats, Achievement, Event, MeetRequest, ChatMessage } from '../types';
 import { computeLevelFromXp, SUPER_ADMIN_EMAIL } from '../utils';
 import AdminConsole from './AdminConsole';
 
@@ -79,14 +79,8 @@ interface DesktopWebAppProps {
   // Shared States for perfect Omni-channel Device synchronization
   currentMyStatus: { text: string; type: string; hotspotId?: string } | null;
   setCurrentMyStatus: React.Dispatch<React.SetStateAction<{ text: string; type: string; hotspotId?: string } | null>>;
-  handshakeState: 'incoming' | 'accepted' | 'pinged';
-  setHandshakeState: React.Dispatch<React.SetStateAction<'incoming' | 'accepted' | 'pinged'>>;
-  handshakeAcceptedBanner: boolean;
-  setHandshakeAcceptedBanner: React.Dispatch<React.SetStateAction<boolean>>;
-  chatCountdown: number;
-  setChatCountdown: React.Dispatch<React.SetStateAction<number>>;
-  chatMessages: Array<{ sender: 'me' | 'peer'; text: string; timestamp: string }>;
-  setChatMessages: React.Dispatch<React.SetStateAction<Array<{ sender: 'me' | 'peer'; text: string; timestamp: string }>>>;
+  chatMessages: ChatMessage[];
+  onSendChatMessage: (meetId: string, text: string) => void;
   waitlistedSpotIds: string[];
   setWaitlistedSpotIds: React.Dispatch<React.SetStateAction<string[]>>;
   sessionUser?: {
@@ -132,14 +126,8 @@ export default function DesktopWebApp({
   onConcludeMeet,
   currentMyStatus,
   setCurrentMyStatus,
-  handshakeState,
-  setHandshakeState,
-  handshakeAcceptedBanner,
-  setHandshakeAcceptedBanner,
-  chatCountdown,
-  setChatCountdown,
   chatMessages,
-  setChatMessages,
+  onSendChatMessage,
   waitlistedSpotIds,
   setWaitlistedSpotIds,
   sessionUser
@@ -157,9 +145,6 @@ export default function DesktopWebApp({
   const [broadcastSuccess, setBroadcastSuccess] = useState(false);
 
   // Custom Ping Alert Modal states matching mobile simulator
-  const [showPingModal, setShowPingModal] = useState(false);
-  const [pingTargetName, setPingTargetName] = useState('');
-  const [pingText, setPingText] = useState('');
   
   // Status BROADCASTER form
   const [showStatusForm, setShowStatusForm] = useState(false);
@@ -216,87 +201,11 @@ export default function DesktopWebApp({
     showNotification("Presence dissolved. You are now ghosted on the campus network.");
   };
 
-  const handleAcceptHandshake = () => {
-    setHandshakeState('accepted');
-    setHandshakeAcceptedBanner(true);
-    showNotification("Handshake accepted over HTTP/STOMP! Direct tunnel ready.");
-  };
-
-  const handleTriggerPingFlow = (uName: string) => {
-    setPingTargetName(uName);
-    setPingText('');
-    setShowPingModal(true);
-  };
-
-  const handleSendPing = () => {
-    if (!pingText.trim()) return;
-
-    const myText = pingText.trim();
-    const currentTimeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    // Seed messages
-    const initialMsgs = [
-      { sender: 'peer' as const, text: 'Hey Priya here! Want to chat about ML over coffee?', timestamp: '12:20 PM' },
-      { sender: 'me' as const, text: myText, timestamp: currentTimeString }
-    ];
-
-    setChatMessages(initialMsgs);
-    setHandshakeState('pinged');
-    setShowPingModal(false);
-    
-    showNotification(`Decentralized keys exchanged! Ephemeral direct tunnel open with ${pingTargetName}.`);
-
-    // Delay peer response representing STOMP brokers
-    setTimeout(() => {
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          sender: 'peer',
-          text: "Perfect, I'm heading over straight away! Seating in the study rooms right now. See you in a minute! ☕",
-          timestamp: currentTimeString
-        }
-      ]);
-      showNotification("New message from Priya Sharma!");
-    }, 2800);
-  };
-
-  const handleSendChatMessage = (e: React.FormEvent) => {
+  const handleChatFormSubmit = (e: React.FormEvent, meetId: string) => {
     e.preventDefault();
     if (!chatInputText.trim()) return;
-
-    const myText = chatInputText.trim();
-    const currentTimeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    setChatMessages((prev) => [
-      ...prev,
-      { sender: 'me', text: myText, timestamp: currentTimeString }
-    ]);
+    onSendChatMessage(meetId, chatInputText.trim());
     setChatInputText('');
-
-    const replies = [
-      "Awesome! I'm carrying my notes with me.",
-      "Just sat down! Which table block are you on?",
-      "Sweet, wearing a blue backpack. Type me when you spot me!",
-      "Superb. Let's look over the routing papers in a minute. 📖",
-      "I am near study booth number 3! Let me know if you are close."
-    ];
-    const randomReply = replies[Math.floor(Math.random() * replies.length)];
-
-    setTimeout(() => {
-      setChatMessages((prev) => [
-        ...prev,
-        { sender: 'peer', text: randomReply, timestamp: currentTimeString }
-      ]);
-      showNotification("New message from Priya Sharma!");
-    }, 2000);
-  };
-
-  const handleDestructChat = () => {
-    setHandshakeState('incoming');
-    setHandshakeAcceptedBanner(false);
-    setChatMessages([]);
-    setChatCountdown(600);
-    showNotification("Ephemeral handshake tunnel and related message keys permanently shredded.");
   };
 
   const handleJoinSpotWaitlist = (spotId: string, spotName: string) => {
@@ -374,12 +283,6 @@ export default function DesktopWebApp({
       });
       showNotification("Successfully RSVPed! +10 XP awarded.");
     }
-  };
-
-  const formatCountdown = (secs: number) => {
-    const mins = Math.floor(secs / 60);
-    const remainder = secs % 60;
-    return `${mins.toString().padStart(2, '0')}:${remainder.toString().padStart(2, '0')}`;
   };
 
   // Filter peers by selected hotspot index mapping
@@ -1005,64 +908,61 @@ export default function DesktopWebApp({
                 </div>
               </div>
 
-              {/* Secure Decent Tunnel Console (The Ephemeral Chat Panel) */}
+              {/* Live Meet Chat (real, Firestore-backed - only exists while an accepted meet is active) */}
               <div className="flex-1 min-h-0 bg-white border-2 border-[#1a1a1a] rounded-2xl overflow-hidden shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col">
-                {handshakeState === 'pinged' ? (
-                  <div className="flex-1 flex flex-col h-full">
-                    {/* Tunnel Header info */}
-                    <div className="bg-[#FFF4E5] border-b-2 border-[#1a1a1a] p-3 flex justify-between items-center text-left">
-                      <div className="flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 border border-[#1a1a1a] flex items-center justify-center font-bold text-white text-xs select-none">
-                          PS
-                        </div>
-                        <div>
-                          <h4 className="text-[11px] font-black text-[#1a1a1a] leading-none">Priya Sharma</h4>
-                          <span className="text-[7.5px] text-gray-500 font-mono font-bold block mt-0.5">🔗 HTTP STOMP BROKER TUNNEL</span>
-                        </div>
-                      </div>
-
-                      {/* Countdown Timer */}
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white border border-[#1a1a1a] rounded-lg">
-                        <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse border border-[#1a1a1a]"></span>
-                        <span className="font-mono text-[9px] font-black text-[#FF6B35] leading-none">
-                          {chatCountdown > 0 ? formatCountdown(chatCountdown) : "EXPIRED"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Chat Messages Log */}
-                    <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-[#fcf9f5]">
-                      {chatMessages.map((msg, idx) => {
-                        const isMe = msg.sender === 'me';
-                        return (
-                          <div key={idx} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[85%] p-2 rounded-xl border border-[#1a1a1a] shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] ${
-                              isMe ? 'bg-[#FF6B35] text-white rounded-tr-none' : 'bg-white text-stone-900 rounded-tl-none'
-                            }`}>
-                              <p className="text-[11px] font-semibold leading-relaxed break-words">{msg.text}</p>
-                              <span className={`text-[6.5px] block text-right mt-1 font-mono ${isMe ? 'text-orange-100' : 'text-gray-400'}`}>
-                                {msg.timestamp}
-                              </span>
-                            </div>
+                {myActiveMeet ? (() => {
+                  const otherName = myActiveMeet.fromEmail.toLowerCase() === myEmailLower ? myActiveMeet.toName : myActiveMeet.fromName;
+                  const otherInitials = otherName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'AM';
+                  const otherUserId = myActiveMeet.fromEmail.toLowerCase() === myEmailLower ? myActiveMeet.toId : myActiveMeet.fromId;
+                  return (
+                    <div className="flex-1 flex flex-col h-full">
+                      {/* Chat Header info */}
+                      <div className="bg-[#FFF4E5] border-b-2 border-[#1a1a1a] p-3 flex justify-between items-center text-left">
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 border border-[#1a1a1a] flex items-center justify-center font-bold text-white text-xs select-none">
+                            {otherInitials}
                           </div>
-                        );
-                      })}
-
-                      {chatCountdown === 0 && (
-                        <div className="text-gray-500 text-center text-[10px] py-4 leading-normal bg-rose-50 border border-dashed border-rose-300 rounded-xl px-2">
-                          <span className="text-rose-800 font-bold block">TUNNEL KEYS SHREDDED</span>
-                          Both client keys expired. To recreate fresh sessions, send a new handshake.
+                          <div>
+                            <h4 className="text-[11px] font-black text-[#1a1a1a] leading-none">{otherName}</h4>
+                            <span className="text-[7.5px] text-emerald-700 font-mono font-bold block mt-0.5">🟢 ACTIVE MEET - LIVE CHAT</span>
+                          </div>
                         </div>
-                      )}
-                    </div>
+                        <button
+                          onClick={() => onConcludeMeet(myActiveMeet.id, otherUserId)}
+                          className="px-2 py-1 bg-white border border-[#1a1a1a] rounded-lg font-black text-[8.5px] uppercase text-rose-700 hover:bg-rose-50 transition cursor-pointer"
+                        >
+                          End Meet
+                        </button>
+                      </div>
 
-                    {/* Chat Input form */}
-                    {chatCountdown > 0 && (
-                      <form onSubmit={handleSendChatMessage} className="p-2 border-t border-[#1a1a1a]/20 flex gap-1.5 shrink-0 bg-white">
+                      {/* Chat Messages Log */}
+                      <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-[#fcf9f5]">
+                        {chatMessages.length === 0 && (
+                          <p className="text-center text-[10px] text-gray-400 font-semibold py-4">Say hi! Messages here are only visible to the two of you.</p>
+                        )}
+                        {chatMessages.map((msg) => {
+                          const isMe = msg.senderEmail?.toLowerCase() === myEmailLower;
+                          return (
+                            <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                              <div className={`max-w-[85%] p-2 rounded-xl border border-[#1a1a1a] shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] ${
+                                isMe ? 'bg-[#FF6B35] text-white rounded-tr-none' : 'bg-white text-stone-900 rounded-tl-none'
+                              }`}>
+                                <p className="text-[11px] font-semibold leading-relaxed break-words">{msg.text}</p>
+                                <span className={`text-[6.5px] block text-right mt-1 font-mono ${isMe ? 'text-orange-100' : 'text-gray-400'}`}>
+                                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Chat Input form */}
+                      <form onSubmit={(e) => handleChatFormSubmit(e, myActiveMeet.id)} className="p-2 border-t border-[#1a1a1a]/20 flex gap-1.5 shrink-0 bg-white">
                         <input 
                           type="text"
                           className="flex-1 text-[11px] font-semibold bg-[#fcf9f5] border border-[#1a1a1a] rounded-lg px-2.5 py-1 focus:outline-none focus:border-[#FF6B35]"
-                          placeholder="Type encrypted message..."
+                          placeholder="Type a message..."
                           value={chatInputText}
                           onChange={(e) => setChatInputText(e.target.value)}
                         />
@@ -1073,29 +973,29 @@ export default function DesktopWebApp({
                           Send
                         </button>
                       </form>
-                    )}
 
-                    {/* Manual self destruct */}
-                    <div className="bg-[#fcf9f5] px-2.5 pb-2 border-t border-dotted border-rose-300 text-center pt-2">
-                      <button 
-                        onClick={handleDestructChat}
-                        className="w-full py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[8.5px] border border-rose-300 uppercase rounded-lg tracking-tight select-none cursor-pointer"
-                      >
-                        💥 Erase Tunnel memory & history
-                      </button>
+                      {/* Conclude meet */}
+                      <div className="bg-[#fcf9f5] px-2.5 pb-2 border-t border-dotted border-rose-300 text-center pt-2">
+                        <button 
+                          onClick={() => onConcludeMeet(myActiveMeet.id, otherUserId)}
+                          className="w-full py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[8.5px] border border-rose-300 uppercase rounded-lg tracking-tight select-none cursor-pointer"
+                        >
+                          ✅ Conclude meet & go offline
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ) : (
+                  );
+                })() : (
                   <div className="flex-1 flex flex-col justify-center items-center p-6 text-center space-y-3 bg-[#fbf9f6]">
                     <Shield size={32} className="text-[#FF6B35] animate-pulse stroke-[1.5]" />
                     <div className="space-y-1">
-                      <h4 className="text-xs font-black text-[#1a1a1a] uppercase">No Spatial Handshake Connected</h4>
+                      <h4 className="text-xs font-black text-[#1a1a1a] uppercase">No Active Meet</h4>
                       <p className="text-[10px] text-gray-400 font-semibold leading-normal max-w-xs mx-auto">
-                        Your direct message tunnel and location index is completely blank. Choose a checked-in peer from the map lobby and trigger a handshake.
+                        Send a Request Meet to a checked-in peer from the lobby. Once they accept, your live chat opens here.
                       </p>
                     </div>
                     <div className="bg-emerald-500/10 border border-emerald-500 rounded-xl p-2 text-emerald-950 text-[9px] font-semibold leading-normal">
-                      🛡️ All Amigo meetings auto-delete permanently inside Redis after 10 minutes to verify zero-footprints.
+                      🛡️ Chats are private to the two of you and end automatically when the meet is concluded.
                     </div>
                   </div>
                 )}
@@ -1453,60 +1353,6 @@ export default function DesktopWebApp({
         )}
 
       </div>
-
-      {/* SECURE PING POPUP MODAL (Synchronized with Mobile Simulator) */}
-      {showPingModal && (
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#fdfaf7] border-4 border-[#1a1a1a] rounded-[32px] p-6 w-full max-w-sm space-y-4 shadow-[8px_8px_0px_0px_rgba(26,26,26,1)] animate-fadeIn">
-            <div className="flex justify-between items-center">
-              <h3 className="text-sm font-black text-[#1a1a1a] uppercase tracking-wider flex items-center gap-1.5">
-                <Zap size={14} className="fill-current text-[#FF6B35] stroke-[2.5]" />
-                <span>Send Desktop Ping Alert</span>
-              </h3>
-              <button 
-                type="button" 
-                onClick={() => setShowPingModal(false)} 
-                className="text-[#1a1a1a] hover:text-[#FF6B35] cursor-pointer"
-              >
-                <X size={18} className="stroke-[3]" />
-              </button>
-            </div>
-
-            <div className="text-xs text-left">
-              <span className="text-gray-400 font-mono font-black uppercase block text-[9px]">Target Recipient:</span>
-              <span className="text-[#1a1a1a] block text-base font-black mt-0.5">{pingTargetName}</span>
-            </div>
-
-            <div className="space-y-1 text-left">
-              <span className="text-gray-400 font-mono font-black uppercase block text-[9px]">Ping Message:</span>
-              <div className="relative">
-                <textarea
-                  maxLength={60}
-                  value={pingText}
-                  onChange={(e) => setPingText(e.target.value)}
-                  placeholder="Give exact table or seating spot details (60 characters)"
-                  rows={2}
-                  className="w-full bg-white border-2 border-[#1a1a1a] rounded-xl p-3 pr-14 text-xs font-semibold text-[#1a1a1a] placeholder-gray-400 focus:outline-none focus:border-[#FF6B35] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] resize-none"
-                  required
-                />
-                <span className="absolute bottom-3 right-3 text-[9px] font-mono text-gray-400 font-black">
-                  {pingText.length}/60
-                </span>
-              </div>
-              <p className="text-[9px] text-[#FF6B35] font-black uppercase tracking-tight">Active meets expire immediately if ignored or closed.</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleSendPing}
-              disabled={!pingText.trim()}
-              className="w-full py-2.5 bg-[#FF6B35] hover:bg-orange-600 font-black text-white text-xs rounded-xl border-2 border-[#1a1a1a] shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] disabled:opacity-40 select-none block cursor-pointer transition transform hover:-translate-y-0.5 active:translate-y-0"
-            >
-              ⚡ Deliver Ping Alert Message
-            </button>
-          </div>
-        </div>
-      )}
 
     </div>
   );

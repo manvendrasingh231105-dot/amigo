@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { User, Hotspot, Event, PrivacySettings, UserStats, MeetRequest } from './types';
+import { User, Hotspot, Event, PrivacySettings, UserStats, MeetRequest, ChatMessage } from './types';
 import CampusWebPortal from './components/CampusWebPortal';
 import AuthGate from './components/AuthGate';
 import { Info, Wifi, BookOpen, Layers, LogOut, Key, ShieldCheck } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, getDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, getDoc, query, orderBy } from 'firebase/firestore';
 import { computeLevelFromXp, emailToSafeId } from './utils';
 
 export default function App() {
@@ -219,10 +219,10 @@ export default function App() {
 
   // Omni-channel State Synchronization for both Simulator and Web Version
   const [currentMyStatus, setCurrentMyStatus] = useState<{ text: string; type: string; hotspotId?: string } | null>(null);
-  const [handshakeState, setHandshakeState] = useState<'incoming' | 'accepted' | 'pinged'>('incoming');
-  const [handshakeAcceptedBanner, setHandshakeAcceptedBanner] = useState(false);
-  const [chatCountdown, setChatCountdown] = useState<number>(600);
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'me' | 'peer'; text: string; timestamp: string }>>([]);
+  // Real-time chat messages for the current active accepted meet, if any.
+  // Re-subscribed automatically whenever the active meet changes (see the
+  // effect further below that watches meetRequests + sessionUser).
+  const [activeChatMessages, setActiveChatMessages] = useState<ChatMessage[]>([]);
   const [waitlistedSpotIds, setWaitlistedSpotIds] = useState<string[]>([]);
 
   // Firestore Synchronization
@@ -340,6 +340,55 @@ export default function App() {
       unsubscribeMeetRequests();
     };
   }, [sessionUser, firebaseUser]);
+
+  // Whenever the user's active accepted meet changes (starts, ends, or
+  // switches), re-subscribe to that meet's chat thread. Firestore rules
+  // ensure only the two participants can actually read/write these.
+  useEffect(() => {
+    if (!sessionUser) {
+      setActiveChatMessages([]);
+      return;
+    }
+    const myEmail = sessionUser.email.toLowerCase();
+    const activeMeet = meetRequests.find(r =>
+      r.status === 'accepted' && (r.fromEmail.toLowerCase() === myEmail || r.toEmail.toLowerCase() === myEmail)
+    );
+    if (!activeMeet) {
+      setActiveChatMessages([]);
+      return;
+    }
+
+    const messagesQuery = query(collection(db, 'chats', activeMeet.id, 'messages'), orderBy('timestamp', 'asc'));
+    const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
+      const list: ChatMessage[] = [];
+      snapshot.forEach((d) => list.push(d.data() as ChatMessage));
+      setActiveChatMessages(list);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'chat messages');
+    });
+
+    return () => unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionUser, meetRequests.map(r => `${r.id}:${r.status}`).join(',')]);
+
+  const handleSendChatMessage = async (meetId: string, text: string) => {
+    if (!sessionUser || !text.trim()) return;
+    const myId = emailToSafeId(sessionUser.email);
+    try {
+      const msgRef = doc(collection(db, 'chats', meetId, 'messages'));
+      await setDoc(msgRef, {
+        id: msgRef.id,
+        senderId: myId,
+        senderEmail: sessionUser.email,
+        senderName: sessionUser.name,
+        text: text.trim(),
+        timestamp: new Date().toISOString()
+      });
+    } catch (e) {
+      console.error('Send chat message failed:', e);
+      showAdminNotice('Message failed to send - please try again.');
+    }
+  };
 
   // Callback when administration pushes WS alert
   const handlePushBroadcastToSimul = (message: string) => {
@@ -844,14 +893,8 @@ export default function App() {
             onConcludeMeet={handleConcludeMeet}
             currentMyStatus={currentMyStatus}
             setCurrentMyStatus={setCurrentMyStatus}
-            handshakeState={handshakeState}
-            setHandshakeState={setHandshakeState}
-            handshakeAcceptedBanner={handshakeAcceptedBanner}
-            setHandshakeAcceptedBanner={setHandshakeAcceptedBanner}
-            chatCountdown={chatCountdown}
-            setChatCountdown={setChatCountdown}
-            chatMessages={chatMessages}
-            setChatMessages={setChatMessages}
+            chatMessages={activeChatMessages}
+            onSendChatMessage={handleSendChatMessage}
             waitlistedSpotIds={waitlistedSpotIds}
             setWaitlistedSpotIds={setWaitlistedSpotIds}
             sessionUser={sessionUser}
