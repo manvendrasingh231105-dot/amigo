@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Shield, Trash2, Ban, CheckCircle2, Zap, Plus, Pencil, X, UserPlus, UserMinus } from 'lucide-react';
 import { User, Hotspot, Event } from '../types';
+import { SUPER_ADMIN_EMAIL } from '../utils';
 
 interface AdminConsoleProps {
   users: User[];
@@ -53,7 +54,6 @@ export default function AdminConsole({
 
   // Only this account can grant/revoke admin access for other people.
   // Every other admin sees and can use every other tab.
-  const SUPER_ADMIN_EMAIL = 'manvendrasingh17791@gmail.com';
   const isSuperAdmin = currentAdminEmail.toLowerCase() === SUPER_ADMIN_EMAIL;
 
   const subTabs: { key: typeof subTab; label: string }[] = [

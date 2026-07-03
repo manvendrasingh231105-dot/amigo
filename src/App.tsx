@@ -214,7 +214,7 @@ export default function App() {
   const [leftTab, setLeftTab] = useState<'specs' | 'admin'>('specs');
 
   // Omni-channel State Synchronization for both Simulator and Web Version
-  const [currentMyStatus, setCurrentMyStatus] = useState<{ text: string; type: string } | null>(null);
+  const [currentMyStatus, setCurrentMyStatus] = useState<{ text: string; type: string; hotspotId?: string } | null>(null);
   const [handshakeState, setHandshakeState] = useState<'incoming' | 'accepted' | 'pinged'>('incoming');
   const [handshakeAcceptedBanner, setHandshakeAcceptedBanner] = useState(false);
   const [chatCountdown, setChatCountdown] = useState<number>(600);
@@ -516,9 +516,14 @@ export default function App() {
   };
 
   // Sync client profile checkin actions to trigger real-time achievements level modifications
-  const handleUserStatusUpdated = async (text: string, type: string) => {
+  const handleUserStatusUpdated = async (text: string, type: string, hotspotId?: string) => {
     console.log(`Presence intent broadcast checked in: ${text} (${type})`);
     if (!sessionUser) return;
+
+    const selectedSpot = hotspots.find(h => h.id === hotspotId);
+    const resolvedLocation = selectedSpot
+      ? selectedSpot.name
+      : (type === 'Studying' ? 'Library Balcony' : type === 'Exploring' ? 'Garden Lawn' : 'Campus Canteen');
 
     const safeId = 'usr_' + sessionUser.email.trim().toLowerCase().replace(/[^a-zA-Z0-9_-]/g, '_');
     const userRef = doc(db, 'users', safeId);
@@ -529,7 +534,7 @@ export default function App() {
         await updateDoc(userRef, {
           statusText: text,
           statusType: type,
-          location: type === 'Studying' ? 'Library Balcony' : type === 'Exploring' ? 'Garden Lawn' : 'Campus Canteen',
+          location: resolvedLocation,
           timeAgo: 'Just now'
         });
       } else {
@@ -542,7 +547,7 @@ export default function App() {
           trustScore: stats.trustScore,
           title: stats.title,
           email: sessionUser.email,
-          location: type === 'Studying' ? 'Library Balcony' : type === 'Exploring' ? 'Garden Lawn' : 'Campus Canteen',
+          location: resolvedLocation,
           role: sessionUser.role,
           statusText: text,
           statusType: type,
@@ -561,7 +566,7 @@ export default function App() {
   useEffect(() => {
     if (!sessionUser || !firebaseUser) return;
     if (currentMyStatus) {
-      handleUserStatusUpdated(currentMyStatus.text, currentMyStatus.type);
+      handleUserStatusUpdated(currentMyStatus.text, currentMyStatus.type, currentMyStatus.hotspotId);
     } else {
       const safeId = 'usr_' + sessionUser.email.trim().toLowerCase().replace(/[^a-zA-Z0-9_-]/g, '_');
       const userRef = doc(db, 'users', safeId);

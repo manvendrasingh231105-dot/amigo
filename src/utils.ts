@@ -1,3 +1,8 @@
+// The single account allowed to grant/revoke admin roles and reposition
+// hotspots on the map. Kept here so both CampusWebPortal and AdminConsole
+// reference the same value.
+export const SUPER_ADMIN_EMAIL = 'manvendrasingh17791@gmail.com';
+
 // Shared gamification helpers.
 // Every 200 XP earned levels a user up by 1, starting at Level 1 with 0 XP.
 export const XP_PER_LEVEL = 200;

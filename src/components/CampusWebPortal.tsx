@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Wifi, 
   Settings, 
@@ -35,7 +35,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { User as AmigoUser, Hotspot, PrivacySettings, UserStats, Achievement, Event } from '../types';
-import { computeLevelFromXp } from '../utils';
+import { computeLevelFromXp, SUPER_ADMIN_EMAIL } from '../utils';
 import AdminConsole from './AdminConsole';
 
 interface DesktopWebAppProps {
@@ -69,8 +69,8 @@ interface DesktopWebAppProps {
   onAdminRevokeAdmin: (email: string) => void;
   
   // Shared States for perfect Omni-channel Device synchronization
-  currentMyStatus: { text: string; type: string } | null;
-  setCurrentMyStatus: React.Dispatch<React.SetStateAction<{ text: string; type: string } | null>>;
+  currentMyStatus: { text: string; type: string; hotspotId?: string } | null;
+  setCurrentMyStatus: React.Dispatch<React.SetStateAction<{ text: string; type: string; hotspotId?: string } | null>>;
   handshakeState: 'incoming' | 'accepted' | 'pinged';
   setHandshakeState: React.Dispatch<React.SetStateAction<'incoming' | 'accepted' | 'pinged'>>;
   handshakeAcceptedBanner: boolean;
@@ -151,6 +151,7 @@ export default function DesktopWebApp({
   const [showStatusForm, setShowStatusForm] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [statusType, setStatusType] = useState<'Studying' | 'Bored' | 'Exploring' | 'Hungry'>('Studying');
+  const [broadcastHotspotId, setBroadcastHotspotId] = useState<string>('');
   
   // Ephemeral Chat Input
   const [chatInputText, setChatInputText] = useState('');
@@ -172,25 +173,14 @@ export default function DesktopWebApp({
     }, 4500);
   };
 
-  const getMyHotspotName = (type: string) => {
-    if (type === 'Studying') return 'Library Balcony';
-    if (type === 'Bored' || type === 'Hungry') return 'Campus Canteen';
-    if (type === 'Exploring') return 'Garden Lawn';
-    return 'Default Zone';
-  };
-
-  const getMyHotspotCoords = (type: string) => {
-    if (type === 'Studying') return { x: 60, y: 28 };
-    if (type === 'Bored' || type === 'Hungry') return { x: 25, y: 72 };
-    if (type === 'Exploring') return { x: 32, y: 30 };
-    return { x: 50, y: 50 };
-  };
-
   const handleGoVisible = (e: React.FormEvent) => {
     e.preventDefault();
     if (!statusText.trim()) return;
 
-    setCurrentMyStatus({ text: statusText, type: statusType });
+    const chosenSpotId = broadcastHotspotId || hotspots[0]?.id || '';
+    const chosenSpot = hotspots.find(h => h.id === chosenSpotId);
+
+    setCurrentMyStatus({ text: statusText, type: statusType, hotspotId: chosenSpotId });
     setShowStatusForm(false);
 
     setStats(prev => {
@@ -203,7 +193,7 @@ export default function DesktopWebApp({
       };
     });
 
-    showNotification(`Presence broadcast live at ${getMyHotspotName(statusType)}! +50 XP granted.`);
+    showNotification(`Presence broadcast live at ${chosenSpot?.name || 'campus'}! +50 XP granted.`);
     setStatusText('');
   };
 
@@ -379,6 +369,34 @@ export default function DesktopWebApp({
   };
 
   // Filter peers by selected hotspot index mapping
+  // ===== Super admin: drag-to-reposition hotspots on the coordinate grid =====
+  const isSuperAdminUser = sessionUser?.role === 'admin' && sessionUser.email.toLowerCase() === SUPER_ADMIN_EMAIL;
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [draggingHotspotId, setDraggingHotspotId] = useState<string | null>(null);
+  const [dragPreviewPos, setDragPreviewPos] = useState<{ x: number; y: number } | null>(null);
+
+  const handleHotspotPointerDown = (e: React.PointerEvent, spotId: string) => {
+    if (!isSuperAdminUser || !onAdminEditHotspot) return;
+    e.stopPropagation();
+    setDraggingHotspotId(spotId);
+  };
+
+  const handleGridPointerMove = (e: React.PointerEvent) => {
+    if (!draggingHotspotId || !gridRef.current) return;
+    const rect = gridRef.current.getBoundingClientRect();
+    const xPct = Math.min(96, Math.max(4, ((e.clientX - rect.left) / rect.width) * 100));
+    const yPct = Math.min(96, Math.max(4, ((e.clientY - rect.top) / rect.height) * 100));
+    setDragPreviewPos({ x: Math.round(xPct), y: Math.round(yPct) });
+  };
+
+  const finishHotspotDrag = () => {
+    if (draggingHotspotId && dragPreviewPos && onAdminEditHotspot) {
+      onAdminEditHotspot(draggingHotspotId, { x: dragPreviewPos.x, y: dragPreviewPos.y });
+    }
+    setDraggingHotspotId(null);
+    setDragPreviewPos(null);
+  };
+
   const getFilteredPeers = () => {
     // Only show peers who have manually broadcast a real status - never
     // show someone as "available" just because they're registered.
@@ -640,7 +658,7 @@ export default function DesktopWebApp({
                     <div className="bg-white px-2 py-1.5 rounded-xl border border-amber-300 font-semibold text-[11px] leading-snug">
                       "{currentMyStatus.text}"
                     </div>
-                    <p className="text-[9px] text-gray-500 font-semibold">Checked in at: <span className="underline font-bold text-gray-700">{getMyHotspotName(currentMyStatus.type)}</span></p>
+                    <p className="text-[9px] text-gray-500 font-semibold">Checked in at: <span className="underline font-bold text-gray-700">{hotspots.find(h => h.id === currentMyStatus.hotspotId)?.name || 'Campus'}</span></p>
                     <button 
                       onClick={handleClearStatus}
                       className="w-full py-1.5 bg-rose-500 hover:bg-rose-600 text-white font-black text-[10px] rounded-lg border-2 border-[#1a1a1a] tracking-wider uppercase transition cursor-pointer shadow-[1.5px_1.5px_0px_0px_rgba(26,26,26,1)]"
@@ -679,6 +697,16 @@ export default function DesktopWebApp({
                           <option value="Bored">Bored 💬</option>
                           <option value="Exploring">Exploring 👣</option>
                           <option value="Hungry">Hungry 🍔</option>
+                        </select>
+                        <select
+                          value={broadcastHotspotId || hotspots[0]?.id || ''}
+                          onChange={(e) => setBroadcastHotspotId(e.target.value)}
+                          required
+                          className="w-full bg-white border border-[#1a1a1a] rounded px-2 py-1 text-[10px] font-bold"
+                        >
+                          {hotspots.map(h => (
+                            <option key={h.id} value={h.id}>📍 {h.name}</option>
+                          ))}
                         </select>
                         <div className="flex gap-1 pt-1">
                           <button 
@@ -793,8 +821,12 @@ export default function DesktopWebApp({
                           <span>{user.location || "Canteen Windows"}</span>
                         </span>
                         
-                        {/* Interactive handshake activation */}
-                        {user.id === 'usr-priya' ? (
+                        {/* Interactive handshake activation - hidden entirely on your own card */}
+                        {user.email?.toLowerCase() === sessionUser?.email?.toLowerCase() ? (
+                          <span className="text-[9px] font-mono bg-gray-100 text-gray-500 border border-gray-300 px-2 py-0.5 rounded font-black uppercase">
+                            This is you
+                          </span>
+                        ) : user.id === 'usr-priya' ? (
                           handshakeState === 'incoming' ? (
                             <button 
                               onClick={handleAcceptHandshake}
@@ -836,9 +868,22 @@ export default function DesktopWebApp({
               
               {/* Radar Map Block */}
               <div className="bg-white border-2 border-[#1a1a1a] rounded-2xl p-3 shadow-[3px_3px_0px_0px_rgba(26,26,26,1)]">
-                <span className="font-mono text-[9px] font-black uppercase text-[#1a1a1a] block mb-2 tracking-wide text-left">PROXIMITY COORDINATE GRID (POSTGIS)</span>
-                
-                <div className="h-40 bg-[#fdfaf7] border-2 border-[#1a1a1a] rounded-xl relative overflow-hidden flex items-center justify-center">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-mono text-[9px] font-black uppercase text-[#1a1a1a] tracking-wide text-left">PROXIMITY COORDINATE GRID (POSTGIS)</span>
+                  {isSuperAdminUser && (
+                    <span className="text-[8px] font-black uppercase text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
+                      Drag pins to reposition
+                    </span>
+                  )}
+                </div>
+
+                <div
+                  ref={gridRef}
+                  onPointerMove={handleGridPointerMove}
+                  onPointerUp={finishHotspotDrag}
+                  onPointerLeave={finishHotspotDrag}
+                  className="h-40 bg-[#fdfaf7] border-2 border-[#1a1a1a] rounded-xl relative overflow-hidden flex items-center justify-center"
+                >
                   {/* Outer Concentric Radar Circles */}
                   <div className="absolute inset-2 border-2 border-dashed border-[#1a1a1a]/15 rounded-full"></div>
                   <div className="absolute inset-10 border border-[#1a1a1a]/10 rounded-full animate-pulse"></div>
@@ -847,18 +892,22 @@ export default function DesktopWebApp({
                   {/* Hotspots represented as spatial coordinates */}
                   {hotspots.map(spot => {
                     const hasSelected = selectedHotspotId === spot.id;
-                    const spotCoords = spot.x && spot.y ? { left: `${spot.x}%`, top: `${spot.y}%` } : { left: '50%', top: '50%' };
+                    const isDragging = draggingHotspotId === spot.id;
+                    const displayX = isDragging && dragPreviewPos ? dragPreviewPos.x : spot.x;
+                    const displayY = isDragging && dragPreviewPos ? dragPreviewPos.y : spot.y;
+                    const spotCoords = displayX != null && displayY != null ? { left: `${displayX}%`, top: `${displayY}%` } : { left: '50%', top: '50%' };
                     return (
                       <div 
                         key={spot.id}
-                        className={`absolute transform -translate-x-1/2 -translate-y-1/2 z-10 transition duration-300 pointer-events-auto cursor-pointer ${
-                          hasSelected ? 'scale-125' : 'hover:scale-110'
-                        }`}
+                        className={`absolute transform -translate-x-1/2 -translate-y-1/2 z-10 transition-transform duration-150 pointer-events-auto ${
+                          isSuperAdminUser ? (isDragging ? 'cursor-grabbing scale-125' : 'cursor-grab hover:scale-110') : 'cursor-pointer'
+                        } ${hasSelected && !isSuperAdminUser ? 'scale-125' : !isSuperAdminUser ? 'hover:scale-110' : ''}`}
                         style={spotCoords}
-                        onClick={() => setSelectedHotspotId(hasSelected ? null : spot.id)}
+                        onPointerDown={(e) => handleHotspotPointerDown(e, spot.id)}
+                        onClick={() => { if (!isSuperAdminUser) setSelectedHotspotId(hasSelected ? null : spot.id); }}
                       >
                         <div className={`h-8 w-8 rounded-full border-2 border-[#1a1a1a] flex items-center justify-center shadow-[1px_1px_2px_rgba(0,0,0,0.15)] ${
-                          hasSelected ? 'bg-orange-500 text-white' : 'bg-white text-[#FF6B35]'
+                          hasSelected || isDragging ? 'bg-orange-500 text-white' : 'bg-white text-[#FF6B35]'
                         }`}>
                           {getHotspotIconComp(spot.icon)}
                         </div>
@@ -868,7 +917,8 @@ export default function DesktopWebApp({
 
                   {/* Self pulsing student position coordinates inside Geofence */}
                   {currentMyStatus && (() => {
-                    const coords = getMyHotspotCoords(currentMyStatus.type);
+                    const mySpot = hotspots.find(h => h.id === currentMyStatus.hotspotId);
+                    const coords = { x: mySpot?.x ?? 50, y: mySpot?.y ?? 50 };
                     return (
                       <div 
                         className="absolute -translate-x-1/2 -translate-y-1/2 z-20 transition-all duration-300"
