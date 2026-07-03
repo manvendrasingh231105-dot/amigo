@@ -138,6 +138,19 @@ service cloud.firestore {
         && data.timestamp is string && data.timestamp.size() <= 100;
     }
 
+    function isValidMeetRequest(data) {
+      return data.keys().hasAll(['id', 'fromId', 'fromEmail', 'fromName', 'toId', 'toEmail', 'toName', 'status', 'createdAt'])
+        && data.id is string && data.id.size() <= 128
+        && data.fromId is string && data.fromId.size() <= 128
+        && data.fromEmail is string && data.fromEmail.size() <= 150
+        && data.fromName is string && data.fromName.size() <= 100
+        && data.toId is string && data.toId.size() <= 128
+        && data.toEmail is string && data.toEmail.size() <= 150
+        && data.toName is string && data.toName.size() <= 100
+        && data.status in ['pending', 'accepted']
+        && data.createdAt is string;
+    }
+
     // 1. Users Profile Collection
     match /users/{userId} {
       allow read: if isSignedIn();
@@ -172,16 +185,3 @@ service cloud.firestore {
 
     // 3. Spontaneous Event Meetups & RSVPs - admin-managed only
     match /events/{eventId} {
-      allow read: if isSignedIn();
-      allow create: if isAdmin() && isValidEvent(incoming());
-      allow update: if isAdmin() && isValidEvent(incoming());
-      allow delete: if isAdmin();
-    }
-
-    // 4. Temporary mesh chats
-    match /chats/{chatId}/messages/{messageId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidMessage(incoming());
-    }
-  }
-}

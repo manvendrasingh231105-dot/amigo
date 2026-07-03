@@ -70,3 +70,20 @@ export interface Achievement {
   description: string;
   unlocked: boolean;
 }
+
+// A real-time meet request between two users, backed by Firestore.
+// 'pending': sent, awaiting the recipient's response.
+// 'accepted': both users are now in an exclusive active meet.
+// (rejected/withdrawn/concluded requests are deleted rather than kept, so
+// "does an active request exist" is just "does a doc exist".)
+export interface MeetRequest {
+  id: string;
+  fromId: string;
+  fromEmail: string;
+  fromName: string;
+  toId: string;
+  toEmail: string;
+  toName: string;
+  status: 'pending' | 'accepted';
+  createdAt: string;
+}

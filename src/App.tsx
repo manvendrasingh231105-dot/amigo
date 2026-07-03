@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Hotspot, Event, PrivacySettings, UserStats } from './types';
+import { User, Hotspot, Event, PrivacySettings, UserStats, MeetRequest } from './types';
 import CampusWebPortal from './components/CampusWebPortal';
 import AuthGate from './components/AuthGate';
 import { Info, Wifi, BookOpen, Layers, LogOut, Key, ShieldCheck } from 'lucide-react';
@@ -176,6 +176,10 @@ export default function App() {
     }
   ]);
 
+  // Real-time meet requests between two users (pending -> accepted, or
+  // deleted on reject/withdraw/conclude).
+  const [meetRequests, setMeetRequests] = useState<MeetRequest[]>([]);
+
   // Simulating administrative alerts pushed live across WS STOMP pings
   const [broadcastAlert, setBroadcastAlert] = useState<string | null>(null);
   // Private feedback for admin actions (e.g. "User blocked.") - NOT the
@@ -319,10 +323,21 @@ export default function App() {
       handleFirestoreError(error, OperationType.LIST, 'events');
     });
 
+    const unsubscribeMeetRequests = onSnapshot(collection(db, 'meetRequests'), (snapshot) => {
+      const list: MeetRequest[] = [];
+      snapshot.forEach((d) => {
+        list.push(d.data() as MeetRequest);
+      });
+      setMeetRequests(list);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'meetRequests');
+    });
+
     return () => {
       unsubscribeUsers();
       unsubscribeHotspots();
       unsubscribeEvents();
+      unsubscribeMeetRequests();
     };
   }, [sessionUser, firebaseUser]);
 
@@ -515,6 +530,80 @@ export default function App() {
     setTimeout(() => setAdminNotice(null), 4000);
   };
 
+  // ===== MEET REQUESTS =====
+  // Exclusivity (one active outgoing request or accepted meet at a time) is
+  // enforced client-side in CampusWebPortal - these functions just perform
+  // the actual Firestore operation once that check has passed.
+
+  const handleSendMeetRequest = async (toUser: User) => {
+    if (!sessionUser || !toUser.id || !toUser.email) return;
+    const myId = emailToSafeId(sessionUser.email);
+    try {
+      const reqRef = doc(collection(db, 'meetRequests'));
+      await setDoc(reqRef, {
+        id: reqRef.id,
+        fromId: myId,
+        fromEmail: sessionUser.email,
+        fromName: sessionUser.name,
+        toId: toUser.id,
+        toEmail: toUser.email,
+        toName: toUser.name,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      });
+    } catch (e) {
+      console.error('Send meet request failed:', e);
+      showAdminNotice('Could not send meet request - please try again.');
+    }
+  };
+
+  const handleWithdrawMeetRequest = async (requestId: string) => {
+    try {
+      await deleteDoc(doc(db, 'meetRequests', requestId));
+    } catch (e) {
+      console.error('Withdraw meet request failed:', e);
+    }
+  };
+
+  const handleAcceptMeetRequest = async (requestId: string) => {
+    try {
+      await updateDoc(doc(db, 'meetRequests', requestId), { status: 'accepted' });
+    } catch (e) {
+      console.error('Accept meet request failed:', e);
+    }
+  };
+
+  const handleRejectMeetRequest = async (requestId: string) => {
+    try {
+      await deleteDoc(doc(db, 'meetRequests', requestId));
+    } catch (e) {
+      console.error('Reject meet request failed:', e);
+    }
+  };
+
+  // Ends an active meet: deletes the request and clears BOTH participants'
+  // status, taking them both offline (matches the "conclude meet" spec).
+  const handleConcludeMeet = async (requestId: string, otherUserId: string) => {
+    try {
+      await deleteDoc(doc(db, 'meetRequests', requestId));
+      if (sessionUser) {
+        const myId = emailToSafeId(sessionUser.email);
+        await updateDoc(doc(db, 'users', myId), {
+          statusText: '', statusType: '', location: '', timeAgo: ''
+        });
+      }
+      if (otherUserId) {
+        await updateDoc(doc(db, 'users', otherUserId), {
+          statusText: '', statusType: '', location: '', timeAgo: ''
+        });
+      }
+      setCurrentMyStatus(null);
+    } catch (e) {
+      console.error('Conclude meet failed:', e);
+      showAdminNotice('Could not conclude meet - please try again.');
+    }
+  };
+
   // Sync client profile checkin actions to trigger real-time achievements level modifications
   const handleUserStatusUpdated = async (text: string, type: string, hotspotId?: string) => {
     console.log(`Presence intent broadcast checked in: ${text} (${type})`);
@@ -576,6 +665,16 @@ export default function App() {
         location: "",
         timeAgo: ""
       }).catch(err => console.error("Error clearing status in Firestore:", err));
+
+      // Going offline manually should also end any active meet, rather
+      // than leaving the other person stuck with a live request/meet.
+      const myEmail = sessionUser.email.toLowerCase();
+      const activeMine = meetRequests.find(r =>
+        r.fromEmail.toLowerCase() === myEmail || r.toEmail.toLowerCase() === myEmail
+      );
+      if (activeMine) {
+        deleteDoc(doc(db, 'meetRequests', activeMine.id)).catch(err => console.error("Error clearing meet on offline:", err));
+      }
     }
   }, [currentMyStatus, sessionUser, firebaseUser]);
 
@@ -737,6 +836,12 @@ export default function App() {
             onAdminDeleteEvent={handleAdminDeleteEvent}
             onAdminGrantAdmin={handleAdminGrantAdmin}
             onAdminRevokeAdmin={handleAdminRevokeAdmin}
+            meetRequests={meetRequests}
+            onSendMeetRequest={handleSendMeetRequest}
+            onWithdrawMeetRequest={handleWithdrawMeetRequest}
+            onAcceptMeetRequest={handleAcceptMeetRequest}
+            onRejectMeetRequest={handleRejectMeetRequest}
+            onConcludeMeet={handleConcludeMeet}
             currentMyStatus={currentMyStatus}
             setCurrentMyStatus={setCurrentMyStatus}
             handshakeState={handshakeState}

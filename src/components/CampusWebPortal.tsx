@@ -34,7 +34,7 @@ import {
   Info,
   Calendar
 } from 'lucide-react';
-import { User as AmigoUser, Hotspot, PrivacySettings, UserStats, Achievement, Event } from '../types';
+import { User as AmigoUser, Hotspot, PrivacySettings, UserStats, Achievement, Event, MeetRequest } from '../types';
 import { computeLevelFromXp, SUPER_ADMIN_EMAIL } from '../utils';
 import AdminConsole from './AdminConsole';
 
@@ -67,6 +67,14 @@ interface DesktopWebAppProps {
   onAdminDeleteEvent: (id: string) => void;
   onAdminGrantAdmin: (email: string) => void;
   onAdminRevokeAdmin: (email: string) => void;
+
+  // Real meet-request system
+  meetRequests: MeetRequest[];
+  onSendMeetRequest: (toUser: AmigoUser) => void;
+  onWithdrawMeetRequest: (requestId: string) => void;
+  onAcceptMeetRequest: (requestId: string) => void;
+  onRejectMeetRequest: (requestId: string) => void;
+  onConcludeMeet: (requestId: string, otherUserId: string) => void;
   
   // Shared States for perfect Omni-channel Device synchronization
   currentMyStatus: { text: string; type: string; hotspotId?: string } | null;
@@ -116,6 +124,12 @@ export default function DesktopWebApp({
   onAdminDeleteEvent,
   onAdminGrantAdmin,
   onAdminRevokeAdmin,
+  meetRequests,
+  onSendMeetRequest,
+  onWithdrawMeetRequest,
+  onAcceptMeetRequest,
+  onRejectMeetRequest,
+  onConcludeMeet,
   currentMyStatus,
   setCurrentMyStatus,
   handshakeState,
@@ -395,6 +409,90 @@ export default function DesktopWebApp({
     }
     setDraggingHotspotId(null);
     setDragPreviewPos(null);
+  };
+
+  // ===== Meet request derived state =====
+  const myEmailLower = sessionUser?.email?.toLowerCase() || '';
+  const myOutgoingPending = meetRequests.find(r => r.status === 'pending' && r.fromEmail.toLowerCase() === myEmailLower);
+  const myIncomingPending = meetRequests.filter(r => r.status === 'pending' && r.toEmail.toLowerCase() === myEmailLower);
+  const myActiveMeet = meetRequests.find(r => r.status === 'accepted' && (r.fromEmail.toLowerCase() === myEmailLower || r.toEmail.toLowerCase() === myEmailLower));
+
+  const renderMeetAction = (peer: AmigoUser) => {
+    const peerEmailLower = peer.email?.toLowerCase();
+
+    // Active accepted meet WITH this person - offer to conclude it
+    if (myActiveMeet && (myActiveMeet.fromEmail.toLowerCase() === peerEmailLower || myActiveMeet.toEmail.toLowerCase() === peerEmailLower)) {
+      const otherUserId = myActiveMeet.fromEmail.toLowerCase() === myEmailLower ? myActiveMeet.toId : myActiveMeet.fromId;
+      return (
+        <button
+          onClick={() => onConcludeMeet(myActiveMeet.id, otherUserId)}
+          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[9px] rounded-lg border-2 border-[#1a1a1a] shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] uppercase transition shrink-0 cursor-pointer"
+        >
+          ✅ Conclude Meet
+        </button>
+      );
+    }
+
+    // Already in an active meet with someone else - can't request anyone
+    if (myActiveMeet) {
+      return (
+        <span className="text-[9px] font-mono bg-gray-100 text-gray-400 border border-gray-300 px-2 py-0.5 rounded font-black uppercase">
+          Busy in a meet
+        </span>
+      );
+    }
+
+    // This person already sent ME a pending request - accept/reject it
+    const incomingFromThisPeer = myIncomingPending.find(r => r.fromEmail.toLowerCase() === peerEmailLower);
+    if (incomingFromThisPeer) {
+      return (
+        <div className="flex gap-1.5 shrink-0">
+          <button
+            onClick={() => onAcceptMeetRequest(incomingFromThisPeer.id)}
+            className="px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[9px] rounded-lg border-2 border-[#1a1a1a] shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] uppercase transition cursor-pointer"
+          >
+            ✓ Accept
+          </button>
+          <button
+            onClick={() => onRejectMeetRequest(incomingFromThisPeer.id)}
+            className="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 font-black text-[9px] rounded-lg border-2 border-[#1a1a1a] shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] uppercase transition cursor-pointer"
+          >
+            ✕ Reject
+          </button>
+        </div>
+      );
+    }
+
+    // I already sent a pending request TO this exact person - offer withdraw
+    if (myOutgoingPending && myOutgoingPending.toEmail.toLowerCase() === peerEmailLower) {
+      return (
+        <button
+          onClick={() => onWithdrawMeetRequest(myOutgoingPending.id)}
+          className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-black text-[9px] rounded-lg border-2 border-[#1a1a1a] shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] uppercase transition shrink-0 cursor-pointer"
+        >
+          ⏳ Pending · Withdraw
+        </button>
+      );
+    }
+
+    // I have a pending request out to someone else - blocked from sending another
+    if (myOutgoingPending) {
+      return (
+        <span className="text-[9px] font-mono bg-gray-100 text-gray-400 border border-gray-300 px-2 py-0.5 rounded font-black uppercase">
+          Request pending elsewhere
+        </span>
+      );
+    }
+
+    // Free to send a request
+    return (
+      <button
+        onClick={() => onSendMeetRequest(peer)}
+        className="px-2.5 py-1 bg-white hover:bg-[#FFF4E5] text-[#1a1a1a] font-black text-[9px] rounded-lg border-2 border-[#1a1a1a] shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] uppercase transition shrink-0 cursor-pointer"
+      >
+        👋 Request Meet
+      </button>
+    );
   };
 
   const getFilteredPeers = () => {
@@ -821,41 +919,12 @@ export default function DesktopWebApp({
                           <span>{user.location || "Canteen Windows"}</span>
                         </span>
                         
-                        {/* Interactive handshake activation - hidden entirely on your own card */}
+                        {/* Interactive meet-request action - hidden entirely on your own card */}
                         {user.email?.toLowerCase() === sessionUser?.email?.toLowerCase() ? (
                           <span className="text-[9px] font-mono bg-gray-100 text-gray-500 border border-gray-300 px-2 py-0.5 rounded font-black uppercase">
                             This is you
                           </span>
-                        ) : user.id === 'usr-priya' ? (
-                          handshakeState === 'incoming' ? (
-                            <button 
-                              onClick={handleAcceptHandshake}
-                              className="px-2.5 py-1 bg-[#FF6B35] hover:bg-[#e0531f] text-white font-black text-[9px] rounded-lg border-2 border-[#1a1a1a] shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] transition uppercase shrink-0 cursor-pointer"
-                            >
-                              🤝 Accept Handshake
-                            </button>
-                          ) : handshakeState === 'accepted' ? (
-                            <button 
-                              onClick={() => handleTriggerPingFlow(user.name)}
-                              className="px-2.5 py-1 bg-rose-500 text-white font-black text-[9px] rounded-lg border-2 border-[#1a1a1a] shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] uppercase transition animate-pulse shrink-0 cursor-pointer"
-                            >
-                              ⚡ Ping Chat Tunnel
-                            </button>
-                          ) : (
-                            <span className="text-[9px] font-mono bg-emerald-100 text-emerald-900 border border-emerald-400 px-2 py-0.5 rounded font-black uppercase">
-                              Active Tunnel
-                            </span>
-                          )
-                        ) : (
-                          <button 
-                            onClick={() => {
-                              showNotification(`Silent Meet request dispatched to ${user.name}! Track progress in Handshakes.`);
-                            }}
-                            className="px-2.5 py-1 bg-white hover:bg-[#FFF4E5] text-[#1a1a1a] font-black text-[9px] rounded-lg border-2 border-[#1a1a1a] shadow-[1px_1px_0px_0px_rgba(26,26,26,1)] uppercase transition shrink-0 cursor-pointer"
-                          >
-                            👋 Request Meet
-                          </button>
-                        )}
+                        ) : renderMeetAction(user)}
                       </div>
                     </div>
                   ))}
