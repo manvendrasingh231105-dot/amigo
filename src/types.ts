@@ -15,6 +15,7 @@ export interface User {
   email?: string;
   role?: "user" | "admin";
   blocked?: boolean;
+  isOrganiser?: boolean;
   xp?: number;
   level?: number;
   meetsCount?: number;
@@ -41,6 +42,7 @@ export interface Event {
   rsvps: string[]; // list of user ids
   maxRsvps: number;
   startTime: string;
+  scheduledFor?: string; // ISO date-time string, used for future scheduling/sorting
   isLive: boolean;
   alertSent?: boolean;
 }

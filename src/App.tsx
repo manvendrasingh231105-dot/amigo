@@ -448,6 +448,28 @@ export default function App() {
     }
   };
 
+  // Organiser access lets someone create/trigger events, without giving
+  // them full admin powers. Any admin can grant/revoke this (unlike full
+  // admin role changes, which are restricted to the super admin).
+  const handleAdminToggleOrganiser = async (userId: string, userEmail: string, isOrganiser: boolean) => {
+    if (!userEmail) return;
+    try {
+      await updateDoc(doc(db, 'users', userId), { isOrganiser });
+      if (isOrganiser) {
+        await setDoc(doc(db, 'organisers', userEmail), {
+          grantedBy: sessionUser?.email || 'unknown',
+          grantedAt: new Date().toISOString()
+        });
+      } else {
+        await deleteDoc(doc(db, 'organisers', userEmail));
+      }
+      showAdminNotice(isOrganiser ? 'Organiser access granted.' : 'Organiser access revoked.');
+    } catch (e) {
+      console.error('Admin organiser toggle failed:', e);
+      showAdminNotice('Failed to update organiser access - check console for details.');
+    }
+  };
+
   const handleAdminAwardXp = async (userId: string, amount: number) => {
     try {
       const userRef = doc(db, 'users', userId);
@@ -876,6 +898,7 @@ export default function App() {
             adminNotice={adminNotice}
             onAdminClearUserStatus={handleAdminClearUserStatus}
             onAdminToggleBlockUser={handleAdminToggleBlockUser}
+            onAdminToggleOrganiser={handleAdminToggleOrganiser}
             onAdminAwardXp={handleAdminAwardXp}
             onAdminEditHotspot={handleAdminEditHotspot}
             onAdminAddHotspot={handleAdminAddHotspot}

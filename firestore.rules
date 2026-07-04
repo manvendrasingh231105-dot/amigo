@@ -67,6 +67,16 @@ service cloud.firestore {
       return incoming().get('role', 'user') == existing().get('role', 'user');
     }
 
+    // Organiser status works exactly like admin status: existence of a doc
+    // in /organisers/{email} grants that email permission to create events.
+    // Any admin (not just the super admin) can grant/revoke this, since
+    // it's a much lower-stakes permission than full admin access.
+    function isOrganiser() {
+      return isSignedIn()
+        && request.auth.token.email != null
+        && exists(/databases/$(database)/documents/organisers/$(request.auth.token.email));
+    }
+
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
@@ -99,6 +109,7 @@ service cloud.firestore {
         && (data.get('statusType', null) == null || data.statusType is string && data.statusType.size() <= 50)
         && (data.get('location', null) == null || data.location is string && data.location.size() <= 100)
         && (data.get('role', null) == null || data.role in ['user', 'admin'])
+        && (data.get('isOrganiser', null) == null || data.isOrganiser is bool)
         && (data.get('meetsCount', null) == null || data.meetsCount is number)
         && (data.get('xp', null) == null || data.xp is number)
         && (data.get('level', null) == null || data.level is number)
@@ -126,6 +137,7 @@ service cloud.firestore {
         && data.rsvps is list
         && data.maxRsvps is number
         && data.startTime is string && data.startTime.size() <= 100
+        && (data.get('scheduledFor', null) == null || data.scheduledFor is string)
         && data.isLive is bool;
     }
 
@@ -191,6 +203,14 @@ service cloud.firestore {
       allow write: if isSuperAdmin() || (isBootstrapAdmin() && request.auth.token.email == email);
     }
 
+    // 1c. Organiser registry - doc ID is the organiser's exact email.
+    // Existence of a doc here grants that email permission to create events.
+    // Any admin can grant/revoke this (lower stakes than full admin access).
+    match /organisers/{email} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     // 2. Hotspots Metrics (Capacity) - admin-managed only
     match /hotspots/{hotspotId} {
       allow read: if isSignedIn();
@@ -198,10 +218,12 @@ service cloud.firestore {
       allow update: if isAdmin() && isValidHotspot(incoming());
     }
 
-    // 3. Spontaneous Event Meetups & RSVPs - admin-managed only
+    // 3. Spontaneous Event Meetups & RSVPs
+    // Admins AND organisers can create (trigger) new events. Only admins can
+    // edit or delete existing ones (via the Admin Console).
     match /events/{eventId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin() && isValidEvent(incoming());
+      allow create: if (isAdmin() || isOrganiser()) && isValidEvent(incoming());
       allow update: if isAdmin() && isValidEvent(incoming());
       allow delete: if isAdmin();
     }

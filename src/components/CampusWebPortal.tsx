@@ -58,6 +58,7 @@ interface DesktopWebAppProps {
   adminNotice: string | null;
   onAdminClearUserStatus: (userId: string) => void;
   onAdminToggleBlockUser: (userId: string, blocked: boolean) => void;
+  onAdminToggleOrganiser: (userId: string, userEmail: string, isOrganiser: boolean) => void;
   onAdminAwardXp: (userId: string, amount: number) => void;
   onAdminEditHotspot: (id: string, updates: Partial<Hotspot>) => void;
   onAdminAddHotspot: (hotspot: Hotspot) => void;
@@ -109,6 +110,7 @@ export default function DesktopWebApp({
   adminNotice,
   onAdminClearUserStatus,
   onAdminToggleBlockUser,
+  onAdminToggleOrganiser,
   onAdminAwardXp,
   onAdminEditHotspot,
   onAdminAddHotspot,
@@ -161,6 +163,7 @@ export default function DesktopWebApp({
   const [newEventOrganizer, setNewEventOrganizer] = useState('AI Club');
   const [newEventLimit, setNewEventLimit] = useState(20);
   const [newEventTime, setNewEventTime] = useState('14:30');
+  const [newEventDate, setNewEventDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   // Local notifications (toast)
   const [toastText, setToastText] = useState<string | null>(null);
@@ -239,7 +242,15 @@ export default function DesktopWebApp({
 
   const handleCreateEvent = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEventTitle.trim()) return;
+    if (!newEventTitle.trim() || !newEventDate || !newEventTime) return;
+
+    const scheduledFor = new Date(`${newEventDate}T${newEventTime}`);
+    const today = new Date();
+    const isToday = scheduledFor.toDateString() === today.toDateString();
+    const dateLabel = isToday
+      ? 'Today'
+      : scheduledFor.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+    const timeLabel = scheduledFor.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const event: Event = {
       id: `event-${Date.now()}`,
@@ -248,13 +259,14 @@ export default function DesktopWebApp({
       organizer: newEventOrganizer,
       rsvps: [],
       maxRsvps: newEventLimit,
-      startTime: `Today, ${newEventTime}`,
+      startTime: `${dateLabel}, ${timeLabel}`,
+      scheduledFor: scheduledFor.toISOString(),
       isLive: true
     };
 
     onAddEvent(event);
     setNewEventTitle('');
-    showNotification(`Broadcast: Scheduled '${event.title}' at ${event.location}!`);
+    showNotification(`Broadcast: Scheduled '${event.title}' at ${event.location} on ${dateLabel}!`);
   };
 
   const handleRsvpEvent = (eventId: string) => {
@@ -288,6 +300,8 @@ export default function DesktopWebApp({
   // Filter peers by selected hotspot index mapping
   // ===== Super admin: drag-to-reposition hotspots on the coordinate grid =====
   const isSuperAdminUser = sessionUser?.role === 'admin' && sessionUser.email.toLowerCase() === SUPER_ADMIN_EMAIL;
+  const myOwnProfile = users.find(u => u.email?.toLowerCase() === sessionUser?.email?.toLowerCase());
+  const canOrganiseEvents = sessionUser?.role === 'admin' || !!myOwnProfile?.isOrganiser;
   const gridRef = useRef<HTMLDivElement>(null);
   const [draggingHotspotId, setDraggingHotspotId] = useState<string | null>(null);
   const [dragPreviewPos, setDragPreviewPos] = useState<{ x: number; y: number } | null>(null);
@@ -1120,77 +1134,107 @@ export default function DesktopWebApp({
                 })}
               </div>
 
-              {/* Instant Social Inventions Scheduler Form (4/12 cols) */}
+              {/* Instant Social Inventions Scheduler Form (4/12 cols) - organiser/admin only */}
               <div className="md:col-span-4 bg-white border-2 border-[#1a1a1a] p-5 rounded-2xl shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] text-left">
-                <span className="font-mono text-[9px] font-black text-blue-900 uppercase">SCHEDULER SERVICE</span>
-                <h4 className="text-sm font-black text-[#1a1a1a] mt-1 mb-3 uppercase">Trigger B2B Student Meet</h4>
+                {canOrganiseEvents ? (
+                  <>
+                    <span className="font-mono text-[9px] font-black text-blue-900 uppercase">SCHEDULER SERVICE</span>
+                    <h4 className="text-sm font-black text-[#1a1a1a] mt-1 mb-3 uppercase">Trigger B2B Student Meet</h4>
 
-                <form onSubmit={handleCreateEvent} className="space-y-3.5">
-                  <div>
-                    <label className="text-[9px] font-black text-gray-450 block uppercase font-mono">Event / Group Title</label>
-                    <input 
-                      type="text" 
-                      required
-                      value={newEventTitle} 
-                      onChange={(e) => setNewEventTitle(e.target.value)}
-                      placeholder="e.g. Generative AI Hackathon"
-                      className="w-full text-xs font-semibold bg-[#fdfaf7] border border-[#1a1a1a] rounded-xl p-2 focus:outline-none focus:border-[#FF6B35] mt-1"
-                    />
-                  </div>
+                    <form onSubmit={handleCreateEvent} className="space-y-3.5">
+                      <div>
+                        <label className="text-[9px] font-black text-gray-450 block uppercase font-mono">Event / Group Title</label>
+                        <input 
+                          type="text" 
+                          required
+                          value={newEventTitle} 
+                          onChange={(e) => setNewEventTitle(e.target.value)}
+                          placeholder="e.g. Generative AI Hackathon"
+                          className="w-full text-xs font-semibold bg-[#fdfaf7] border border-[#1a1a1a] rounded-xl p-2 focus:outline-none focus:border-[#FF6B35] mt-1"
+                        />
+                      </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[9px] font-black text-gray-450 block uppercase font-mono">Subzone Location</label>
-                      <select 
-                        value={newEventLocation} 
-                        onChange={(e) => setNewEventLocation(e.target.value)}
-                        className="w-full text-xs font-bold bg-[#fdfaf7] border border-[#1a1a1a] rounded-xl p-2 mt-1"
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[9px] font-black text-gray-450 block uppercase font-mono">Subzone Location</label>
+                          <select 
+                            value={newEventLocation} 
+                            onChange={(e) => setNewEventLocation(e.target.value)}
+                            className="w-full text-xs font-bold bg-[#fdfaf7] border border-[#1a1a1a] rounded-xl p-2 mt-1"
+                          >
+                            <option value="Library Balcony">Library Balcony</option>
+                            <option value="Campus Canteen">Campus Canteen</option>
+                            <option value="Garden Lawn">Garden Lawn</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black text-gray-450 block uppercase font-mono font-mono">Organizer Club</label>
+                          <input 
+                            type="text" 
+                            required
+                            value={newEventOrganizer} 
+                            onChange={(e) => setNewEventOrganizer(e.target.value)}
+                            className="w-full text-xs bg-[#fdfaf7] border border-[#1a1a1a] rounded-xl p-2 mt-1 font-semibold"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] font-black text-gray-450 block uppercase font-mono">Event Date</label>
+                        <input 
+                          type="date" 
+                          required
+                          min={new Date().toISOString().split('T')[0]}
+                          value={newEventDate} 
+                          onChange={(e) => setNewEventDate(e.target.value)}
+                          className="w-full text-xs bg-[#fdfaf7] border border-[#1a1a1a] rounded-xl p-2 mt-1 font-mono font-semibold"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[9px] font-black text-gray-450 block uppercase font-mono">Capacity Limit</label>
+                          <input 
+                            type="number" 
+                            value={newEventLimit} 
+                            onChange={(e) => setNewEventLimit(parseInt(e.target.value) || 12)}
+                            className="w-full text-xs bg-[#fdfaf7] border border-[#1a1a1a] rounded-xl p-2 mt-1 font-mono font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black text-gray-450 block uppercase font-mono">Start Time</label>
+                          <input 
+                            type="time" 
+                            value={newEventTime} 
+                            onChange={(e) => setNewEventTime(e.target.value)}
+                            className="w-full text-xs bg-[#fdfaf7] border border-[#1a1a1a] rounded-xl p-2 mt-1 font-mono font-semibold"
+                          />
+                        </div>
+                      </div>
+
+                      <button 
+                        type="submit"
+                        className="w-full py-2 bg-[#FF6B35] text-white border-2 border-[#1a1a1a] text-xs font-black rounded-xl shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-orange-600 uppercase transition cursor-pointer"
                       >
-                        <option value="Library Balcony">Library Balcony</option>
-                        <option value="Campus Canteen">Campus Canteen</option>
-                        <option value="Garden Lawn">Garden Lawn</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black text-gray-450 block uppercase font-mono font-mono">Organizer Club</label>
-                      <input 
-                        type="text" 
-                        required
-                        value={newEventOrganizer} 
-                        onChange={(e) => setNewEventOrganizer(e.target.value)}
-                        className="w-full text-xs bg-[#fdfaf7] border border-[#1a1a1a] rounded-xl p-2 mt-1 font-semibold"
-                      />
-                    </div>
+                        🚀 Launch Event Alert
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <div className="text-center py-6 space-y-3">
+                    <span className="text-3xl block">🔒</span>
+                    <h4 className="text-sm font-black text-[#1a1a1a] uppercase">Organiser Access Required</h4>
+                    <p className="text-xs text-gray-500 font-semibold leading-relaxed px-2">
+                      Only approved organisers and admins can schedule campus events. Want to broadcast your own events here?
+                    </p>
+                    <a
+                      href="mailto:manvendrasingh17791@gmail.com?subject=Amigo%20Organiser%20Access%20Request"
+                      className="inline-block text-xs font-black text-[#FF6B35] underline decoration-wavy"
+                    >
+                      manvendrasingh17791@gmail.com
+                    </a>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[9px] font-black text-gray-450 block uppercase font-mono">Capacity Limit</label>
-                      <input 
-                        type="number" 
-                        value={newEventLimit} 
-                        onChange={(e) => setNewEventLimit(parseInt(e.target.value) || 12)}
-                        className="w-full text-xs bg-[#fdfaf7] border border-[#1a1a1a] rounded-xl p-2 mt-1 font-mono font-semibold"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black text-gray-450 block uppercase font-mono">Start Time</label>
-                      <input 
-                        type="time" 
-                        value={newEventTime} 
-                        onChange={(e) => setNewEventTime(e.target.value)}
-                        className="w-full text-xs bg-[#fdfaf7] border border-[#1a1a1a] rounded-xl p-2 mt-1 font-mono font-semibold"
-                      />
-                    </div>
-                  </div>
-
-                  <button 
-                    type="submit"
-                    className="w-full py-2 bg-[#FF6B35] text-white border-2 border-[#1a1a1a] text-xs font-black rounded-xl shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-orange-600 uppercase transition cursor-pointer"
-                  >
-                    🚀 Launch Event Alert
-                  </button>
-                </form>
+                )}
               </div>
 
             </div>
@@ -1360,47 +1404,3 @@ export default function DesktopWebApp({
                       <h4 className="text-xs font-black text-stone-900 leading-none">Silent Pings Only</h4>
                       <span className="text-[10px] text-gray-400 font-semibold block mt-1">Turn off chat bubble alerts</span>
                     </div>
-                    <button 
-                      onClick={() => setPrivacy({ ...privacy, silentPings: !privacy.silentPings })}
-                      className={`w-12 h-6 rounded-full border-2 border-[#1a1a1a] transition relative shrink-0 cursor-pointer ${
-                        privacy.silentPings ? 'bg-emerald-500' : 'bg-gray-100'
-                      }`}
-                    >
-                      <span className={`w-4 h-4 bg-white border border-[#1a1a1a] rounded-full absolute top-[2px] transition ${
-                        privacy.silentPings ? 'left-6' : 'left-[2px]'
-                      }`}></span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* =============== Admin Console Tab =============== */}
-        {webActiveTab === 'admin' && sessionUser?.role === 'admin' && (
-          <AdminConsole
-            users={users}
-            hotspots={hotspots}
-            events={events}
-            currentAdminEmail={sessionUser.email}
-            onClearUserStatus={onAdminClearUserStatus}
-            onToggleBlockUser={onAdminToggleBlockUser}
-            onAwardXp={onAdminAwardXp}
-            onEditHotspot={onAdminEditHotspot}
-            onAddHotspot={onAdminAddHotspot}
-            onDeleteHotspot={onAdminDeleteHotspot}
-            onEditEvent={onAdminEditEvent}
-            onAddEvent={onAdminAddEvent}
-            onDeleteEvent={onAdminDeleteEvent}
-            onGrantAdmin={onAdminGrantAdmin}
-            onRevokeAdmin={onAdminRevokeAdmin}
-          />
-        )}
-
-      </div>
-
-    </div>
-  );
-}

@@ -10,6 +10,7 @@ interface AdminConsoleProps {
   currentAdminEmail: string;
   onClearUserStatus: (userId: string) => void;
   onToggleBlockUser: (userId: string, blocked: boolean) => void;
+  onToggleOrganiser: (userId: string, userEmail: string, isOrganiser: boolean) => void;
   onAwardXp: (userId: string, amount: number) => void;
   onEditHotspot: (id: string, updates: Partial<Hotspot>) => void;
   onAddHotspot: (hotspot: Hotspot) => void;
@@ -30,6 +31,7 @@ export default function AdminConsole({
   currentAdminEmail,
   onClearUserStatus,
   onToggleBlockUser,
+  onToggleOrganiser,
   onAwardXp,
   onEditHotspot,
   onAddHotspot,
@@ -106,6 +108,7 @@ export default function AdminConsole({
                     {u.name}
                     {u.role === 'admin' && <Shield size={12} className="text-indigo-600 shrink-0" />}
                     {u.blocked && <span className="text-[9px] bg-red-100 text-red-700 font-black px-1.5 py-0.5 rounded-full border border-red-300">BLOCKED</span>}
+                    {u.isOrganiser && <span className="text-[9px] bg-purple-100 text-purple-700 font-black px-1.5 py-0.5 rounded-full border border-purple-300">ORGANISER</span>}
                   </p>
                   <p className="text-[10px] text-gray-400 font-mono truncate">{u.email}</p>
                   <p className="text-[10px] font-bold text-gray-500 mt-0.5">
@@ -136,6 +139,16 @@ export default function AdminConsole({
                   }`}
                 >
                   {u.blocked ? <><CheckCircle2 size={11} /> Unblock</> : <><Ban size={11} /> Block</>}
+                </button>
+
+                <button
+                  onClick={() => onToggleOrganiser(u.id, u.email || '', !u.isOrganiser)}
+                  disabled={!u.email}
+                  className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black border-2 border-[#1a1a1a] transition flex items-center gap-1 cursor-pointer disabled:opacity-40 ${
+                    u.isOrganiser ? 'bg-purple-100 hover:bg-purple-200' : 'bg-white hover:bg-gray-100'
+                  }`}
+                >
+                  📅 {u.isOrganiser ? 'Revoke Organiser' : 'Make Organiser'}
                 </button>
 
                 <div className="flex items-center gap-1">
@@ -495,16 +508,3 @@ export default function AdminConsole({
             {users.filter(u => u.role === 'admin').map(a => (
               <div key={a.id} className="bg-white border-2 border-[#1a1a1a] rounded-xl p-3 flex items-center justify-between">
                 <p className="text-xs font-black text-[#1a1a1a] flex items-center gap-1.5">
-                  <Shield size={12} className="text-indigo-600" /> {a.name} <span className="text-gray-400 font-mono font-semibold">({a.email})</span>
-                </p>
-                {a.email?.toLowerCase() === currentAdminEmail.toLowerCase() && (
-                  <span className="text-[9px] font-black text-gray-400 uppercase">You</span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
