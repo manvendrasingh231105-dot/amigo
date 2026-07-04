@@ -1404,3 +1404,48 @@ export default function DesktopWebApp({
                       <h4 className="text-xs font-black text-stone-900 leading-none">Silent Pings Only</h4>
                       <span className="text-[10px] text-gray-400 font-semibold block mt-1">Turn off chat bubble alerts</span>
                     </div>
+                    <button 
+                      onClick={() => setPrivacy({ ...privacy, silentPings: !privacy.silentPings })}
+                      className={`w-12 h-6 rounded-full border-2 border-[#1a1a1a] transition relative shrink-0 cursor-pointer ${
+                        privacy.silentPings ? 'bg-emerald-500' : 'bg-gray-100'
+                      }`}
+                    >
+                      <span className={`w-4 h-4 bg-white border border-[#1a1a1a] rounded-full absolute top-[2px] transition ${
+                        privacy.silentPings ? 'left-6' : 'left-[2px]'
+                      }`}></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* =============== Admin Console Tab =============== */}
+        {webActiveTab === 'admin' && sessionUser?.role === 'admin' && (
+          <AdminConsole
+            users={users}
+            hotspots={hotspots}
+            events={events}
+            currentAdminEmail={sessionUser.email}
+            onClearUserStatus={onAdminClearUserStatus}
+            onToggleBlockUser={onAdminToggleBlockUser}
+            onToggleOrganiser={onAdminToggleOrganiser}
+            onAwardXp={onAdminAwardXp}
+            onEditHotspot={onAdminEditHotspot}
+            onAddHotspot={onAdminAddHotspot}
+            onDeleteHotspot={onAdminDeleteHotspot}
+            onEditEvent={onAdminEditEvent}
+            onAddEvent={onAdminAddEvent}
+            onDeleteEvent={onAdminDeleteEvent}
+            onGrantAdmin={onAdminGrantAdmin}
+            onRevokeAdmin={onAdminRevokeAdmin}
+          />
+        )}
+
+      </div>
+
+    </div>
+  );
+}
