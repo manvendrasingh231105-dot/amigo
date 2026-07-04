@@ -442,15 +442,6 @@ export default function AuthGate({ onLogin }: AuthGateProps) {
               transition={{ duration: 0.15 }}
               className="space-y-4"
             >
-              <div className="text-center mb-6 py-2 bg-[#FFF9F2] border-2 border-[#1a1a1a] rounded-2xl shadow-[3px_3px_0px_0px_rgba(26,26,26,1)]">
-                <span className="text-[10px] font-mono text-[#FF6B35] font-black uppercase tracking-widest bg-white border border-[#1a1a1a]/40 px-2 py-0.5 rounded-full">
-                  Campus Verification Network
-                </span>
-                <p className="text-xs text-gray-600 font-medium px-4 mt-2">
-                  Spontaneous proximity matching is confined to authenticated student accounts and university staff. Please choose an authorization option below:
-                </p>
-              </div>
-
               {/* CARD OPTION 1: STUDENT GATEWAY */}
               <div className="bg-white border-3 border-[#1a1a1a] p-5 rounded-2xl shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition hover:-translate-y-0.5">
                 <span className="text-[9px] font-mono bg-emerald-50 text-emerald-950 border border-emerald-900/30 px-2 py-0.5 rounded uppercase font-black tracking-wide">
@@ -550,7 +541,7 @@ export default function AuthGate({ onLogin }: AuthGateProps) {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Manvendra Singh"
+                    placeholder="Your full name"
                     value={regName}
                     onChange={(e) => setRegName(e.target.value)}
                     className="w-full bg-white border-2 border-[#1a1a1a] rounded-xl px-3.5 py-3 text-xs font-bold text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#FF6B35] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
@@ -566,7 +557,7 @@ export default function AuthGate({ onLogin }: AuthGateProps) {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Varanasi, Uttar Pradesh"
+                    placeholder="Your city and state"
                     value={regAddress}
                     onChange={(e) => setRegAddress(e.target.value)}
                     className="w-full bg-white border-2 border-[#1a1a1a] rounded-xl px-3.5 py-3 text-xs font-bold text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#FF6B35] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
@@ -582,7 +573,7 @@ export default function AuthGate({ onLogin }: AuthGateProps) {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Indian Institute of Technology (BHU)"
+                    placeholder="Your university or campus name"
                     value={regCampus}
                     onChange={(e) => setRegCampus(e.target.value)}
                     className="w-full bg-white border-2 border-[#1a1a1a] rounded-xl px-3.5 py-3 text-xs font-bold text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#FF6B35] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
@@ -608,11 +599,10 @@ export default function AuthGate({ onLogin }: AuthGateProps) {
                   <div>
                     <label className="block text-xs font-extrabold text-[#1a1a1a] uppercase mb-1 flex items-center gap-1.5 font-sans">
                       <Mail size={13} className="text-[#FF6B35]" />
-                      <span>Gmail Address *</span>
+                      <span>Gmail Address (optional)</span>
                     </label>
                     <input
                       type="email"
-                      required
                       placeholder="user@gmail.com"
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
@@ -673,13 +663,6 @@ export default function AuthGate({ onLogin }: AuthGateProps) {
                   <p className="text-xs text-gray-600 font-semibold mb-3">
                     Click below to open the safe Google Sign-In prompt. Select your registered Gmail address to instantly verify your identity.
                   </p>
-                  
-                  <div className="p-2 px-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] font-semibold text-amber-900 flex items-center gap-2">
-                    <span>💡 Preseeded Account:</span>
-                    <strong className="font-mono bg-white border border-amber-300 px-1.5 py-0.5 rounded text-amber-950">
-                      manvendrasingh17791@gmail.com
-                    </strong>
-                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-2">
@@ -735,13 +718,6 @@ export default function AuthGate({ onLogin }: AuthGateProps) {
                   <p className="text-xs text-gray-650 font-semibold mb-3">
                     Click below to trigger secure administrator authentication via Google secure popup window. Only authorized Gmail addresses are granted moderator commands.
                   </p>
-                  
-                  <div className="p-2 px-3 bg-indigo-50 border border-indigo-200 rounded-xl text-[11px] font-semibold text-indigo-900 flex flex-col gap-1">
-                    <div>👑 Authorized Adms:</div>
-                    <code className="font-mono text-[9px] bg-white border border-indigo-200 p-1 px-1.5 rounded text-indigo-950 truncate block">
-                      manvendrasingh17791@gmail.com
-                    </code>
-                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-2">

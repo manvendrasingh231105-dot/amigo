@@ -320,6 +320,17 @@ export default function DesktopWebApp({
   const myIncomingPending = meetRequests.filter(r => r.status === 'pending' && r.toEmail.toLowerCase() === myEmailLower);
   const myActiveMeet = meetRequests.find(r => r.status === 'accepted' && (r.fromEmail.toLowerCase() === myEmailLower || r.toEmail.toLowerCase() === myEmailLower));
 
+  // Toast the moment a NEW incoming request arrives, so it's noticed even
+  // if the person isn't currently looking at the peer list or Radar tab.
+  const prevIncomingIds = useRef<string[]>([]);
+  useEffect(() => {
+    const currentIds = myIncomingPending.map(r => r.id);
+    const newOnes = myIncomingPending.filter(r => !prevIncomingIds.current.includes(r.id));
+    newOnes.forEach(r => showNotification(`📩 ${r.fromName} sent you a Meet Request!`));
+    prevIncomingIds.current = currentIds;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myIncomingPending.map(r => r.id).join(',')]);
+
   const renderMeetAction = (peer: AmigoUser) => {
     const peerEmailLower = peer.email?.toLowerCase();
 
@@ -512,6 +523,11 @@ export default function DesktopWebApp({
           >
             <MessageSquare size={13} />
             <span>Campus Radar & Lobby</span>
+            {myIncomingPending.length > 0 && (
+              <span className="ml-0.5 bg-emerald-500 text-white text-[9px] font-black rounded-full h-4 w-4 flex items-center justify-center border border-white">
+                {myIncomingPending.length}
+              </span>
+            )}
           </button>
           
           <button 
@@ -733,6 +749,37 @@ export default function DesktopWebApp({
 
             {/* Column B (5/12): Student Lobby Peer Grid */}
             <div className="col-span-12 lg:col-span-5 p-4 lg:max-h-[700px] lg:overflow-y-auto space-y-4">
+
+              {/* Incoming meet request notifications - ALWAYS visible here regardless
+                  of hotspot filter, so a request never gets missed just because the
+                  sender's card happens to be filtered out of the list below. */}
+              {myIncomingPending.length > 0 && (
+                <div className="bg-emerald-50 border-2 border-emerald-600 rounded-2xl p-3 shadow-[3px_3px_0px_0px_rgba(5,150,105,1)] space-y-2 animate-fadeIn">
+                  <p className="text-[10px] font-black text-emerald-900 uppercase tracking-wide flex items-center gap-1.5">
+                    🔔 {myIncomingPending.length} Meet Request{myIncomingPending.length > 1 ? 's' : ''} Waiting On You
+                  </p>
+                  {myIncomingPending.map(req => (
+                    <div key={req.id} className="bg-white border-2 border-[#1a1a1a] rounded-xl p-2.5 flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-[#1a1a1a] truncate">{req.fromName}</p>
+                      <div className="flex gap-1.5 shrink-0">
+                        <button
+                          onClick={() => onAcceptMeetRequest(req.id)}
+                          className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[9px] rounded-lg border-2 border-[#1a1a1a] uppercase transition cursor-pointer"
+                        >
+                          ✓ Accept
+                        </button>
+                        <button
+                          onClick={() => onRejectMeetRequest(req.id)}
+                          className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 font-black text-[9px] rounded-lg border-2 border-[#1a1a1a] uppercase transition cursor-pointer"
+                        >
+                          ✕ Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="flex justify-between items-center bg-[#fdfaf7] py-0.5 sticky top-0 z-10">
                 <h3 className="font-display font-black text-base text-[#1a1a1a] tracking-tight">
                   {selectedHotspotId ? "Filtered Peers Nearby" : "All Active Amigos"}
