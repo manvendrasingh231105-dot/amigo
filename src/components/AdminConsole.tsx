@@ -508,3 +508,16 @@ export default function AdminConsole({
             {users.filter(u => u.role === 'admin').map(a => (
               <div key={a.id} className="bg-white border-2 border-[#1a1a1a] rounded-xl p-3 flex items-center justify-between">
                 <p className="text-xs font-black text-[#1a1a1a] flex items-center gap-1.5">
+                  <Shield size={12} className="text-indigo-600" /> {a.name} <span className="text-gray-400 font-mono font-semibold">({a.email})</span>
+                </p>
+                {a.email?.toLowerCase() === currentAdminEmail.toLowerCase() && (
+                  <span className="text-[9px] font-black text-gray-400 uppercase">You</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
