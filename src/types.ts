@@ -101,3 +101,44 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
 }
+
+// ===== Polls & Predictions (XP betting) =====
+// A poll's option definitions live on the poll doc itself (static labels).
+// The XP totals wagered per option live in a SEPARATE subcollection
+// (polls/{id}/optionTotals/{optionId}) so they can be updated atomically
+// with Firestore's increment() - you can't atomically increment a single
+// field inside an array element, only inside a map/subdocument.
+export interface PollOption {
+  id: string;
+  label: string;
+}
+
+export interface Poll {
+  id: string;
+  title: string;
+  description?: string;
+  options: PollOption[];
+  status: 'open' | 'closed' | 'resolved';
+  winningOptionId?: string;
+  createdAt: string;
+  createdBy: string; // admin email
+}
+
+// polls/{pollId}/optionTotals/{optionId} - live XP pool per option
+export interface PollOptionTotal {
+  optionId: string;
+  totalXp: number;
+}
+
+// polls/{pollId}/wagers/{userSafeId} - one wager per user per poll.
+// Locked in once created; can't be changed or withdrawn.
+export interface PollWager {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  optionId: string;
+  amount: number;
+  createdAt: string;
+  payout?: number; // filled in once the poll resolves, if they won
+}

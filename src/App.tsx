@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { User, Hotspot, Event, PrivacySettings, UserStats, MeetRequest, ChatMessage } from './types';
+import { User, Hotspot, Event, PrivacySettings, UserStats, MeetRequest, ChatMessage, Poll, PollOption, PollOptionTotal, PollWager } from './types';
 import CampusWebPortal from './components/CampusWebPortal';
 import AuthGate from './components/AuthGate';
 import { Info, Wifi, BookOpen, Layers, LogOut, Key, ShieldCheck } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, getDoc, query, orderBy } from 'firebase/firestore';
+import { collection, collectionGroup, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, getDoc, getDocs, query, orderBy, increment } from 'firebase/firestore';
 import { computeLevelFromXp, emailToSafeId } from './utils';
 
 export default function App() {
@@ -180,6 +180,13 @@ export default function App() {
   // deleted on reject/withdraw/conclude).
   const [meetRequests, setMeetRequests] = useState<MeetRequest[]>([]);
 
+  // Polls & Predictions. optionTotals and wagers live in per-poll
+  // subcollections, so they're synced via collectionGroup listeners and
+  // grouped by pollId client-side (see the effect below).
+  const [polls, setPolls] = useState<Poll[]>([]);
+  const [pollOptionTotals, setPollOptionTotals] = useState<Record<string, PollOptionTotal[]>>({});
+  const [pollWagers, setPollWagers] = useState<Record<string, PollWager[]>>({});
+
   // Simulating administrative alerts pushed live across WS STOMP pings
   const [broadcastAlert, setBroadcastAlert] = useState<string | null>(null);
   // Private feedback for admin actions (e.g. "User blocked.") - NOT the
@@ -333,11 +340,48 @@ export default function App() {
       handleFirestoreError(error, OperationType.LIST, 'meetRequests');
     });
 
+    const unsubscribePolls = onSnapshot(collection(db, 'polls'), (snapshot) => {
+      const list: Poll[] = [];
+      snapshot.forEach((d) => list.push(d.data() as Poll));
+      setPolls(list);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'polls');
+    });
+
+    const unsubscribeOptionTotals = onSnapshot(collectionGroup(db, 'optionTotals'), (snapshot) => {
+      const grouped: Record<string, PollOptionTotal[]> = {};
+      snapshot.forEach((d) => {
+        const pollId = d.ref.parent.parent?.id;
+        if (!pollId) return;
+        if (!grouped[pollId]) grouped[pollId] = [];
+        grouped[pollId].push(d.data() as PollOptionTotal);
+      });
+      setPollOptionTotals(grouped);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'poll option totals');
+    });
+
+    const unsubscribeWagers = onSnapshot(collectionGroup(db, 'wagers'), (snapshot) => {
+      const grouped: Record<string, PollWager[]> = {};
+      snapshot.forEach((d) => {
+        const pollId = d.ref.parent.parent?.id;
+        if (!pollId) return;
+        if (!grouped[pollId]) grouped[pollId] = [];
+        grouped[pollId].push(d.data() as PollWager);
+      });
+      setPollWagers(grouped);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'poll wagers');
+    });
+
     return () => {
       unsubscribeUsers();
       unsubscribeHotspots();
       unsubscribeEvents();
       unsubscribeMeetRequests();
+      unsubscribePolls();
+      unsubscribeOptionTotals();
+      unsubscribeWagers();
     };
   }, [sessionUser, firebaseUser]);
 
@@ -675,6 +719,132 @@ export default function App() {
     }
   };
 
+  // ===== POLLS & PREDICTIONS =====
+
+  const handleAdminCreatePoll = async (title: string, description: string, optionLabels: string[]) => {
+    if (!sessionUser || !title.trim() || optionLabels.length < 2) return;
+    try {
+      const pollRef = doc(collection(db, 'polls'));
+      const options: PollOption[] = optionLabels.map((label, i) => ({
+        id: `opt${i}-${pollRef.id.slice(0, 6)}`,
+        label: label.trim()
+      }));
+      const poll: Poll = {
+        id: pollRef.id,
+        title: title.trim(),
+        description: description.trim(),
+        options,
+        status: 'open',
+        createdAt: new Date().toISOString(),
+        createdBy: sessionUser.email
+      };
+      await setDoc(pollRef, poll);
+      await Promise.all(options.map(opt =>
+        setDoc(doc(db, 'polls', pollRef.id, 'optionTotals', opt.id), { optionId: opt.id, totalXp: 0 })
+      ));
+      showAdminNotice(`Poll "${poll.title}" created.`);
+    } catch (e) {
+      console.error('Create poll failed:', e);
+      showAdminNotice('Failed to create poll - check console for details.');
+    }
+  };
+
+  const handleAdminEditPoll = async (pollId: string, updates: Partial<Poll>) => {
+    try {
+      await updateDoc(doc(db, 'polls', pollId), updates as any);
+      showAdminNotice('Poll updated.');
+    } catch (e) {
+      console.error('Edit poll failed:', e);
+      showAdminNotice('Failed to update poll - check console for details.');
+    }
+  };
+
+  const handleAdminDeletePoll = async (pollId: string) => {
+    try {
+      const totalsSnap = await getDocs(collection(db, 'polls', pollId, 'optionTotals'));
+      await Promise.all(totalsSnap.docs.map(d => deleteDoc(d.ref)));
+      const wagersSnap = await getDocs(collection(db, 'polls', pollId, 'wagers'));
+      await Promise.all(wagersSnap.docs.map(d => deleteDoc(d.ref)));
+      await deleteDoc(doc(db, 'polls', pollId));
+      showAdminNotice('Poll deleted.');
+    } catch (e) {
+      console.error('Delete poll failed:', e);
+      showAdminNotice('Failed to delete poll - check console for details.');
+    }
+  };
+
+  // Resolves a poll: pays out every wager on the winning option, in
+  // proportion to its share of that option's pool, from the FULL pool
+  // (a standard pari-mutuel payout). Losing wagers get payout: 0 recorded
+  // for a clean history. Runs entirely client-side as an admin action,
+  // since only admins can write XP to other users' profiles.
+  const handleAdminResolvePoll = async (pollId: string, winningOptionId: string) => {
+    try {
+      const totalsSnap = await getDocs(collection(db, 'polls', pollId, 'optionTotals'));
+      const totals: Record<string, number> = {};
+      totalsSnap.forEach(d => { totals[d.id] = (d.data().totalXp || 0); });
+      const totalPool = Object.values(totals).reduce((a, b) => a + b, 0);
+      const winningPool = totals[winningOptionId] || 0;
+
+      const wagersSnap = await getDocs(collection(db, 'polls', pollId, 'wagers'));
+      for (const wDoc of wagersSnap.docs) {
+        const wager = wDoc.data() as PollWager;
+        if (wager.optionId === winningOptionId && winningPool > 0) {
+          const payout = Math.round(wager.amount * (totalPool / winningPool));
+          const userRef = doc(db, 'users', wager.userId);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            const newXp = (userSnap.data().xp || 0) + payout;
+            await updateDoc(userRef, { xp: newXp, level: computeLevelFromXp(newXp) });
+          }
+          await updateDoc(wDoc.ref, { payout });
+        } else {
+          await updateDoc(wDoc.ref, { payout: 0 });
+        }
+      }
+
+      await updateDoc(doc(db, 'polls', pollId), { status: 'resolved', winningOptionId });
+      showAdminNotice('Poll resolved - payouts distributed to winners.');
+    } catch (e) {
+      console.error('Resolve poll failed:', e);
+      showAdminNotice('Failed to resolve poll - check console for details.');
+    }
+  };
+
+  // A user backing an option with their own XP. Locked in once placed -
+  // no editing or withdrawing. XP is deducted via the same `stats` state
+  // used everywhere else, so it goes through the existing persistence
+  // effect instead of racing it with a second direct Firestore write.
+  const handlePlaceWager = async (pollId: string, optionId: string, amount: number) => {
+    if (!sessionUser || amount <= 0) return;
+    if (amount > stats.xp) {
+      showAdminNotice("You don't have enough XP for that wager.");
+      return;
+    }
+    const myId = emailToSafeId(sessionUser.email);
+    try {
+      const wager: PollWager = {
+        id: myId,
+        userId: myId,
+        userEmail: sessionUser.email,
+        userName: sessionUser.name,
+        optionId,
+        amount,
+        createdAt: new Date().toISOString()
+      };
+      await setDoc(doc(db, 'polls', pollId, 'wagers', myId), wager);
+      await updateDoc(doc(db, 'polls', pollId, 'optionTotals', optionId), { totalXp: increment(amount) });
+      setStats(prev => {
+        const newXp = prev.xp - amount;
+        return { ...prev, xp: newXp, level: computeLevelFromXp(newXp) };
+      });
+      showAdminNotice(`Wager placed: ${amount} XP!`);
+    } catch (e) {
+      console.error('Place wager failed:', e);
+      showAdminNotice('Failed to place wager - check console for details.');
+    }
+  };
+
   // Sync client profile checkin actions to trigger real-time achievements level modifications
   const handleUserStatusUpdated = async (text: string, type: string, hotspotId?: string) => {
     console.log(`Presence intent broadcast checked in: ${text} (${type})`);
@@ -914,6 +1084,14 @@ export default function App() {
             onAcceptMeetRequest={handleAcceptMeetRequest}
             onRejectMeetRequest={handleRejectMeetRequest}
             onConcludeMeet={handleConcludeMeet}
+            polls={polls}
+            pollOptionTotals={pollOptionTotals}
+            pollWagers={pollWagers}
+            onPlaceWager={handlePlaceWager}
+            onAdminCreatePoll={handleAdminCreatePoll}
+            onAdminEditPoll={handleAdminEditPoll}
+            onAdminDeletePoll={handleAdminDeletePoll}
+            onAdminResolvePoll={handleAdminResolvePoll}
             currentMyStatus={currentMyStatus}
             setCurrentMyStatus={setCurrentMyStatus}
             chatMessages={activeChatMessages}

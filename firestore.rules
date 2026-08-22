@@ -178,6 +178,43 @@ service cloud.firestore {
         && data.createdAt is string;
     }
 
+    // ===== Polls & Predictions =====
+    function isValidPoll(data) {
+      return data.keys().hasAll(['id', 'title', 'options', 'status', 'createdAt', 'createdBy'])
+        && data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 150
+        && (data.get('description', null) == null || (data.description is string && data.description.size() <= 500))
+        && data.options is list && data.options.size() >= 2 && data.options.size() <= 8
+        && data.status in ['open', 'closed', 'resolved']
+        && (data.get('winningOptionId', null) == null || data.winningOptionId is string)
+        && data.createdAt is string
+        && data.createdBy is string;
+    }
+
+    function isValidOptionTotal(data) {
+      return data.keys().hasAll(['optionId', 'totalXp'])
+        && data.optionId is string && data.optionId.size() <= 128
+        && data.totalXp is number && data.totalXp >= 0;
+    }
+
+    function isValidWager(data) {
+      return data.keys().hasAll(['id', 'userId', 'userEmail', 'userName', 'optionId', 'amount', 'createdAt'])
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.userEmail is string && data.userEmail.size() <= 150
+        && data.userName is string && data.userName.size() <= 100
+        && data.optionId is string && data.optionId.size() <= 128
+        && data.amount is number && data.amount > 0 && data.amount <= 1000000
+        && data.createdAt is string
+        && (data.get('payout', null) == null || data.payout is number);
+    }
+
+    // A poll only accepts new wagers / pool increases while it's 'open'.
+    function pollIsOpen(pollId) {
+      return exists(/databases/$(database)/documents/polls/$(pollId))
+        && get(/databases/$(database)/documents/polls/$(pollId)).data.status == 'open';
+    }
+
     // 1. Users Profile Collection
     match /users/{userId} {
       allow read: if isSignedIn();
@@ -259,6 +296,46 @@ service cloud.firestore {
             || (incoming().status == 'accepted' && existing().status == 'pending' && existing().toEmail == request.auth.token.email));
       allow delete: if isSignedIn()
         && (existing().fromEmail == request.auth.token.email || existing().toEmail == request.auth.token.email);
+    }
+
+    // 6. Polls & Predictions - users wager XP they already own on an
+    // outcome; admins fully control the poll lifecycle. XP deduction on
+    // placing a wager, and payout crediting on resolution, both happen as
+    // writes to /users/{id} (see rule #1) - a self-write for the deduction,
+    // an admin write for crediting winners after resolution.
+    match /polls/{pollId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidPoll(incoming());
+      allow update: if isAdmin() && isValidPoll(incoming());
+      allow delete: if isAdmin();
+
+      // Live XP pool per option. Only admins create these (done when the
+      // poll itself is created, one per option). Any signed-in user can
+      // increase the total (that's how placing a wager registers), but
+      // only while the poll is open, and the total can only go up - never
+      // down - which rules out someone trying to shrink the pool.
+      match /optionTotals/{optionId} {
+        allow read: if isSignedIn();
+        allow create: if isAdmin() && isValidOptionTotal(incoming());
+        allow update: if isSignedIn() && pollIsOpen(pollId)
+          && isValidOptionTotal(incoming())
+          && incoming().optionId == existing().optionId
+          && incoming().totalXp >= existing().totalXp;
+        allow delete: if isAdmin();
+      }
+
+      // One wager per user per poll (doc ID = that user's own safe ID).
+      // Locked in the moment it's created - no edits, no withdrawals.
+      // Admins attach a 'payout' field via update once the poll resolves.
+      match /wagers/{userId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && pollIsOpen(pollId)
+          && isValidWager(incoming())
+          && incoming().id == userId
+          && incoming().userEmail == request.auth.token.email;
+        allow update: if isAdmin() && isValidWager(incoming());
+        allow delete: if isAdmin();
+      }
     }
   }
 }

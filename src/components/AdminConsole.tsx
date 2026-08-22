@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Shield, Trash2, Ban, CheckCircle2, Zap, Plus, Pencil, X, UserPlus, UserMinus } from 'lucide-react';
-import { User, Hotspot, Event } from '../types';
+import { Shield, Trash2, Ban, CheckCircle2, Zap, Plus, Pencil, X, UserPlus, UserMinus, Trophy, Lock, Unlock } from 'lucide-react';
+import { User, Hotspot, Event, Poll, PollOptionTotal, PollWager } from '../types';
 import { SUPER_ADMIN_EMAIL } from '../utils';
 
 interface AdminConsoleProps {
@@ -20,6 +20,15 @@ interface AdminConsoleProps {
   onDeleteEvent: (id: string) => void;
   onGrantAdmin: (email: string) => void;
   onRevokeAdmin: (email: string) => void;
+
+  // Polls & Predictions
+  polls: Poll[];
+  pollOptionTotals: Record<string, PollOptionTotal[]>;
+  pollWagers: Record<string, PollWager[]>;
+  onCreatePoll: (title: string, description: string, optionLabels: string[]) => void;
+  onEditPoll: (pollId: string, updates: Partial<Poll>) => void;
+  onDeletePoll: (pollId: string) => void;
+  onResolvePoll: (pollId: string, winningOptionId: string) => void;
 }
 
 const ICONS = ['coffee', 'leaf', 'sun', 'book', 'utensils', 'home'];
@@ -40,9 +49,16 @@ export default function AdminConsole({
   onAddEvent,
   onDeleteEvent,
   onGrantAdmin,
-  onRevokeAdmin
+  onRevokeAdmin,
+  polls,
+  pollOptionTotals,
+  pollWagers,
+  onCreatePoll,
+  onEditPoll,
+  onDeletePoll,
+  onResolvePoll
 }: AdminConsoleProps) {
-  const [subTab, setSubTab] = useState<'users' | 'hotspots' | 'events' | 'roles'>('users');
+  const [subTab, setSubTab] = useState<'users' | 'hotspots' | 'events' | 'predictions' | 'roles'>('users');
   const [xpInputs, setXpInputs] = useState<Record<string, string>>({});
   const [editingHotspotId, setEditingHotspotId] = useState<string | null>(null);
   const [hotspotDraft, setHotspotDraft] = useState<Partial<Hotspot>>({});
@@ -53,6 +69,13 @@ export default function AdminConsole({
   const [showNewEventForm, setShowNewEventForm] = useState(false);
   const [newEvent, setNewEvent] = useState<Partial<Event>>({ maxRsvps: 20, isLive: true });
   const [roleEmail, setRoleEmail] = useState('');
+  const [showNewPollForm, setShowNewPollForm] = useState(false);
+  const [newPollTitle, setNewPollTitle] = useState('');
+  const [newPollDesc, setNewPollDesc] = useState('');
+  const [newPollOptions, setNewPollOptions] = useState(['', '']);
+  const [editingPollId, setEditingPollId] = useState<string | null>(null);
+  const [pollDraft, setPollDraft] = useState<{ title?: string; description?: string }>({});
+  const [expandedPollId, setExpandedPollId] = useState<string | null>(null);
 
   // Only this account can grant/revoke admin access for other people.
   // Every other admin sees and can use every other tab.
@@ -62,6 +85,7 @@ export default function AdminConsole({
     { key: 'users', label: 'Users & Status' },
     { key: 'hotspots', label: 'Hotspots' },
     { key: 'events', label: 'Meetups & Events' },
+    { key: 'predictions', label: 'Predictions' },
     ...(isSuperAdmin ? [{ key: 'roles' as const, label: 'Admin Roles' }] : [])
   ];
 
@@ -469,6 +493,220 @@ export default function AdminConsole({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ===== PREDICTIONS ===== */}
+      {subTab === 'predictions' && (
+        <div className="space-y-3 max-w-4xl">
+          <button
+            onClick={() => setShowNewPollForm(v => !v)}
+            className="px-3 py-2 rounded-xl text-xs font-black border-2 border-[#1a1a1a] bg-emerald-100 hover:bg-emerald-200 transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Plus size={13} /> {showNewPollForm ? 'Cancel' : 'Create new poll'}
+          </button>
+
+          {showNewPollForm && (
+            <div className="bg-white border-2 border-[#1a1a1a] rounded-2xl p-4 shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] space-y-3">
+              <input
+                placeholder="Poll title (e.g. Chase)"
+                value={newPollTitle}
+                onChange={(e) => setNewPollTitle(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-xs font-bold border-2 border-[#1a1a1a] focus:outline-none focus:border-indigo-600"
+              />
+              <input
+                placeholder="Description (optional)"
+                value={newPollDesc}
+                onChange={(e) => setNewPollDesc(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-xs font-bold border-2 border-[#1a1a1a] focus:outline-none focus:border-indigo-600"
+              />
+              <div className="space-y-2">
+                <span className="text-[9px] font-black text-gray-400 uppercase font-mono">Options (min 2, max 8)</span>
+                {newPollOptions.map((opt, i) => (
+                  <div key={i} className="flex gap-2">
+                    <input
+                      placeholder={`Option ${i + 1}`}
+                      value={opt}
+                      onChange={(e) => setNewPollOptions(prev => prev.map((o, idx) => idx === i ? e.target.value : o))}
+                      className="flex-1 px-3 py-2 rounded-lg text-xs font-bold border-2 border-[#1a1a1a] focus:outline-none focus:border-indigo-600"
+                    />
+                    {newPollOptions.length > 2 && (
+                      <button
+                        onClick={() => setNewPollOptions(prev => prev.filter((_, idx) => idx !== i))}
+                        className="px-2 rounded-lg border-2 border-[#1a1a1a] bg-red-100 hover:bg-red-200 transition cursor-pointer"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {newPollOptions.length < 8 && (
+                  <button
+                    onClick={() => setNewPollOptions(prev => [...prev, ''])}
+                    className="text-[10px] font-black text-indigo-700 uppercase cursor-pointer"
+                  >
+                    + Add option
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  const cleanOptions = newPollOptions.map(o => o.trim()).filter(Boolean);
+                  if (!newPollTitle.trim() || cleanOptions.length < 2) return;
+                  onCreatePoll(newPollTitle.trim(), newPollDesc.trim(), cleanOptions);
+                  setNewPollTitle('');
+                  setNewPollDesc('');
+                  setNewPollOptions(['', '']);
+                  setShowNewPollForm(false);
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-black border-2 border-[#1a1a1a] bg-[#FF6B35] text-white hover:bg-orange-600 transition cursor-pointer"
+              >
+                Launch poll
+              </button>
+            </div>
+          )}
+
+          {polls.length === 0 && (
+            <p className="text-xs text-gray-400 font-semibold">No polls created yet.</p>
+          )}
+
+          {[...polls].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(poll => {
+            const totals = pollOptionTotals[poll.id] || [];
+            const totalPool = totals.reduce((sum, t) => sum + (t.totalXp || 0), 0);
+            const wagers = pollWagers[poll.id] || [];
+            const isExpanded = expandedPollId === poll.id;
+
+            return (
+              <div key={poll.id} className="bg-white border-2 border-[#1a1a1a] rounded-2xl p-4 shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] space-y-3">
+                {editingPollId === poll.id ? (
+                  <div className="space-y-2">
+                    <input
+                      value={pollDraft.title ?? poll.title}
+                      onChange={(e) => setPollDraft(prev => ({ ...prev, title: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg text-xs font-bold border-2 border-[#1a1a1a] focus:outline-none focus:border-indigo-600"
+                      placeholder="Title"
+                    />
+                    <input
+                      value={pollDraft.description ?? poll.description ?? ''}
+                      onChange={(e) => setPollDraft(prev => ({ ...prev, description: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg text-xs font-bold border-2 border-[#1a1a1a] focus:outline-none focus:border-indigo-600"
+                      placeholder="Description"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { onEditPoll(poll.id, pollDraft); setEditingPollId(null); setPollDraft({}); }}
+                        className="px-3 py-1.5 rounded-lg text-[10px] font-black border-2 border-[#1a1a1a] bg-emerald-100 hover:bg-emerald-200 transition cursor-pointer"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => { setEditingPollId(null); setPollDraft({}); }}
+                        className="px-3 py-1.5 rounded-lg text-[10px] font-black border-2 border-[#1a1a1a] bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-[#1a1a1a] truncate flex items-center gap-2">
+                          {poll.title}
+                          <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
+                            poll.status === 'open' ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                            : poll.status === 'closed' ? 'bg-amber-50 text-amber-700 border-amber-300'
+                            : 'bg-gray-100 text-gray-500 border-gray-300'
+                          }`}>
+                            {poll.status}
+                          </span>
+                        </p>
+                        <p className="text-[10px] text-gray-400 font-semibold truncate">{poll.description}</p>
+                        <p className="text-[10px] font-bold text-gray-500 mt-0.5">{Math.round(totalPool)} XP pool · {wagers.length} wagers</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => setExpandedPollId(isExpanded ? null : poll.id)}
+                          className="px-2 py-1.5 rounded-lg border-2 border-[#1a1a1a] bg-white hover:bg-gray-100 transition cursor-pointer text-[10px] font-black uppercase"
+                        >
+                          {isExpanded ? 'Hide' : 'Monitor'}
+                        </button>
+                        <button
+                          onClick={() => { setEditingPollId(poll.id); setPollDraft({}); }}
+                          className="p-2 rounded-lg border-2 border-[#1a1a1a] bg-white hover:bg-gray-100 transition cursor-pointer"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          onClick={() => onDeletePoll(poll.id)}
+                          className="p-2 rounded-lg border-2 border-[#1a1a1a] bg-red-100 hover:bg-red-200 transition cursor-pointer"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Option rows with close/resolve controls */}
+                    <div className="space-y-1.5">
+                      {poll.options.map(opt => {
+                        const optTotal = totals.find(t => t.optionId === opt.id)?.totalXp || 0;
+                        const isWinner = poll.winningOptionId === opt.id;
+                        return (
+                          <div key={opt.id} className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${isWinner ? 'bg-emerald-50 border-emerald-300' : 'bg-gray-50 border-gray-200'}`}>
+                            <span className="text-[11px] font-bold text-[#1a1a1a] flex items-center gap-1">
+                              {opt.label}
+                              {isWinner && <Trophy size={11} className="text-emerald-600" />}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono font-bold text-gray-400">{Math.round(optTotal)} XP</span>
+                              {poll.status === 'closed' && (
+                                <button
+                                  onClick={() => onResolvePoll(poll.id, opt.id)}
+                                  className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500 text-white hover:bg-emerald-600 transition cursor-pointer"
+                                >
+                                  Declare winner
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {poll.status === 'open' && (
+                      <button
+                        onClick={() => onEditPoll(poll.id, { status: 'closed' })}
+                        className="w-full py-1.5 rounded-lg text-[10px] font-black border-2 border-[#1a1a1a] bg-amber-100 hover:bg-amber-200 transition uppercase flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Lock size={11} /> Close betting
+                      </button>
+                    )}
+                    {poll.status === 'closed' && (
+                      <button
+                        onClick={() => onEditPoll(poll.id, { status: 'open' })}
+                        className="w-full py-1.5 rounded-lg text-[10px] font-black border-2 border-[#1a1a1a] bg-white hover:bg-gray-100 transition uppercase flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Unlock size={11} /> Reopen betting
+                      </button>
+                    )}
+
+                    {isExpanded && (
+                      <div className="border-t border-dashed border-gray-300 pt-2 space-y-1 max-h-40 overflow-y-auto">
+                        <span className="text-[9px] font-black text-gray-400 uppercase font-mono">All wagers</span>
+                        {wagers.length === 0 && <p className="text-[10px] text-gray-400">No wagers placed yet.</p>}
+                        {wagers.map(w => (
+                          <div key={w.id} className="flex items-center justify-between text-[10px] font-semibold text-gray-600">
+                            <span>{w.userName} <span className="text-gray-400 font-mono">({w.userEmail})</span></span>
+                            <span className="font-mono">{poll.options.find(o => o.id === w.optionId)?.label} · {w.amount} XP{w.payout != null ? ` · payout ${w.payout}` : ''}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

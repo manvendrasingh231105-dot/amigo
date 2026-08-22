@@ -34,7 +34,8 @@ import {
   Info,
   Calendar
 } from 'lucide-react';
-import { User as AmigoUser, Hotspot, PrivacySettings, UserStats, Achievement, Event, MeetRequest, ChatMessage } from '../types';
+import { User as AmigoUser, Hotspot, PrivacySettings, UserStats, Achievement, Event, MeetRequest, ChatMessage, Poll, PollOptionTotal, PollWager } from '../types';
+import PredictionsPanel from './PredictionsPanel';
 import { computeLevelFromXp, SUPER_ADMIN_EMAIL } from '../utils';
 import AdminConsole from './AdminConsole';
 
@@ -76,6 +77,16 @@ interface DesktopWebAppProps {
   onAcceptMeetRequest: (requestId: string) => void;
   onRejectMeetRequest: (requestId: string) => void;
   onConcludeMeet: (requestId: string, otherUserId: string) => void;
+
+  // Polls & Predictions
+  polls: Poll[];
+  pollOptionTotals: Record<string, PollOptionTotal[]>;
+  pollWagers: Record<string, PollWager[]>;
+  onPlaceWager: (pollId: string, optionId: string, amount: number) => void;
+  onAdminCreatePoll: (title: string, description: string, optionLabels: string[]) => void;
+  onAdminEditPoll: (pollId: string, updates: Partial<Poll>) => void;
+  onAdminDeletePoll: (pollId: string) => void;
+  onAdminResolvePoll: (pollId: string, winningOptionId: string) => void;
   
   // Shared States for perfect Omni-channel Device synchronization
   currentMyStatus: { text: string; type: string; hotspotId?: string } | null;
@@ -126,6 +137,14 @@ export default function DesktopWebApp({
   onAcceptMeetRequest,
   onRejectMeetRequest,
   onConcludeMeet,
+  polls,
+  pollOptionTotals,
+  pollWagers,
+  onPlaceWager,
+  onAdminCreatePoll,
+  onAdminEditPoll,
+  onAdminDeletePoll,
+  onAdminResolvePoll,
   currentMyStatus,
   setCurrentMyStatus,
   chatMessages,
@@ -135,7 +154,7 @@ export default function DesktopWebApp({
   sessionUser
 }: DesktopWebAppProps) {
   // Navigation inside Desktop Web App
-  const [webActiveTab, setWebActiveTab] = useState<'radar' | 'events' | 'gamification' | 'privacy' | 'admin'>('radar');
+  const [webActiveTab, setWebActiveTab] = useState<'radar' | 'events' | 'predictions' | 'gamification' | 'privacy' | 'admin'>('radar');
   const [selectedHotspotId, setSelectedHotspotId] = useState<string | null>(null);
   const [filteredMode, setFilteredMode] = useState<'everyone' | 'this_hotspot'>('everyone');
 
@@ -554,6 +573,18 @@ export default function DesktopWebApp({
           >
             <Plus size={13} />
             <span>Campus meetups & RSVPs</span>
+          </button>
+
+          <button 
+            onClick={() => setWebActiveTab('predictions')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-black transition border-2 flex items-center gap-1.5 cursor-pointer ${
+              webActiveTab === 'predictions' 
+                ? 'bg-[#FF6B35] text-white border-[#1a1a1a] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]' 
+                : 'bg-white text-gray-600 border-gray-200 hover:border-[#1a1a1a] hover:text-[#1a1a1a]'
+            }`}
+          >
+            <BarChart3 size={13} />
+            <span>Predictions</span>
           </button>
 
           <button 
@@ -1241,6 +1272,18 @@ export default function DesktopWebApp({
           </div>
         )}
 
+        {/* =============== Predictions Tab =============== */}
+        {webActiveTab === 'predictions' && (
+          <PredictionsPanel
+            polls={polls}
+            pollOptionTotals={pollOptionTotals}
+            pollWagers={pollWagers}
+            myEmail={sessionUser?.email || ''}
+            myXp={stats.xp}
+            onPlaceWager={onPlaceWager}
+          />
+        )}
+
 
         {/* =============== Gamification XP Tab =============== */}
         {webActiveTab === 'gamification' && (
@@ -1441,6 +1484,13 @@ export default function DesktopWebApp({
             onDeleteEvent={onAdminDeleteEvent}
             onGrantAdmin={onAdminGrantAdmin}
             onRevokeAdmin={onAdminRevokeAdmin}
+            polls={polls}
+            pollOptionTotals={pollOptionTotals}
+            pollWagers={pollWagers}
+            onCreatePoll={onAdminCreatePoll}
+            onEditPoll={onAdminEditPoll}
+            onDeletePoll={onAdminDeletePoll}
+            onResolvePoll={onAdminResolvePoll}
           />
         )}
 
