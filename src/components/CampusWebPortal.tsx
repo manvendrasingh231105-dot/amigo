@@ -659,7 +659,12 @@ export default function DesktopWebApp({
               <div className="space-y-2.5">
                 {hotspots.map(h => {
                   const isSelected = selectedHotspotId === h.id;
-                  const isFull = h.activeCount >= h.limit;
+                  // Live headcount - anyone currently broadcasting a real
+                  // status at this exact hotspot - rather than the stored
+                  // `activeCount` field, which is just static seed data and
+                  // never reflects who's actually checked in right now.
+                  const liveCount = users.filter(u => !!u.statusText && u.location === h.name).length;
+                  const isFull = liveCount >= h.limit;
                   return (
                     <div 
                       key={h.id}
@@ -682,7 +687,7 @@ export default function DesktopWebApp({
                         </div>
 
                         <span className={`text-[9px] font-mono font-black border-2 border-[#1a1a1a] px-1.5 py-0.5 rounded-lg ${isFull ? 'bg-orange-200 text-amber-900' : 'bg-emerald-100 text-emerald-900'}`}>
-                          {h.activeCount}/{h.limit}
+                          {liveCount}/{h.limit}
                         </span>
                       </div>
 

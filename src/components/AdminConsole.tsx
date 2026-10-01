@@ -336,7 +336,8 @@ export default function AdminConsole({
                   <div className="min-w-0">
                     <p className="text-sm font-black text-[#1a1a1a] truncate">{h.name}</p>
                     <p className="text-[10px] text-gray-400 font-semibold truncate">{h.description}</p>
-                    <p className="text-[10px] font-bold text-gray-500 mt-0.5">{h.activeCount}/{h.limit} active</p>
+                    <p className="text-[10px] font-bold text-gray-500 mt-0.5">{users.filter(u => !!u.statusText && u.location === h.name).length}/{h.limit} active</p>
+                    <p className="text-[9px] text-gray-300 font-mono">live headcount, not a stored number</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button

@@ -89,7 +89,9 @@ export default function App() {
     });
   };
 
-  // Pre-populated high-quality realistic campus student mock data reflecting Screenshot 7
+  // Pre-populated realistic campus student mock accounts. No fake "active"
+  // status here on purpose - a demo account should only ever show as
+  // online if it's genuinely been broadcast (matches real user behavior).
   const [users, setUsers] = useState<User[]>([
     {
       id: 'usr-priya',
@@ -98,10 +100,10 @@ export default function App() {
       avatarColor: 'from-amber-400 to-orange-500',
       trustScore: 4.7,
       title: 'Campus Legend',
-      statusText: 'Anyone want to discuss machine learning papers?',
-      statusType: 'Studying',
-      location: 'Library Balcony',
-      timeAgo: '59m'
+      statusText: '',
+      statusType: undefined,
+      location: '',
+      timeAgo: ''
     },
     {
       id: 'usr-arjun',
@@ -110,10 +112,10 @@ export default function App() {
       avatarColor: 'from-emerald-400 to-teal-500',
       trustScore: 4.2,
       title: 'Icebreaker',
-      statusText: 'Bored and up for any conversation',
-      statusType: 'Bored',
-      location: 'Campus Canteen',
-      timeAgo: '29m'
+      statusText: '',
+      statusType: undefined,
+      location: '',
+      timeAgo: ''
     },
     {
       id: 'usr-nisha',
@@ -122,10 +124,10 @@ export default function App() {
       avatarColor: 'from-purple-500 to-indigo-500',
       trustScore: 4.9,
       title: 'Connector',
-      statusText: 'Looking for someone to explore the garden with',
-      statusType: 'Exploring',
-      location: 'Garden Lawn',
-      timeAgo: '44m'
+      statusText: '',
+      statusType: undefined,
+      location: '',
+      timeAgo: ''
     },
     {
       id: 'usr-rohan',
@@ -134,10 +136,10 @@ export default function App() {
       avatarColor: 'from-rose-400 to-pink-500',
       trustScore: 3.8,
       title: 'Social Starter',
-      statusText: 'Hungry — does anyone want to grab a bite?',
-      statusType: 'Hungry',
-      location: 'Campus Canteen',
-      timeAgo: '14m'
+      statusText: '',
+      statusType: undefined,
+      location: '',
+      timeAgo: ''
     },
     {
       id: 'usr-kavya',
@@ -146,18 +148,18 @@ export default function App() {
       avatarColor: 'from-sky-400 to-blue-500',
       trustScore: 4.5,
       title: 'Vibe Curator',
-      statusText: 'Enjoying premium coffee and writing some hooks',
-      statusType: 'Studying',
-      location: 'Campus Canteen',
-      timeAgo: '2m'
+      statusText: '',
+      statusType: undefined,
+      location: '',
+      timeAgo: ''
     }
   ]);
 
   // Pre-populated Hotspots mirroring screenshots (book cup leaves utensils)
   const [hotspots, setHotspots] = useState<Hotspot[]>([
-    { id: 'spot-coffee', name: 'Campus Canteen', icon: 'coffee', activeCount: 3, limit: 10, description: 'Coffee block & canteen rooms', subZones: ['Table 12', 'Window Seat'], x: 25, y: 72 },
-    { id: 'spot-leaf', name: 'Garden Lawn', icon: 'leaf', activeCount: 1, limit: 5, description: 'Open garden fields', subZones: ['Foliage path', 'East Lawn'], x: 32, y: 30 },
-    { id: 'spot-book', name: 'Library Balcony', icon: 'book', activeCount: 1, limit: 4, description: 'Quiet research balcony', subZones: ['Study Room C', 'Balcony Corner'], x: 60, y: 28 },
+    { id: 'spot-coffee', name: 'Campus Canteen', icon: 'coffee', activeCount: 0, limit: 10, description: 'Coffee block & canteen rooms', subZones: ['Table 12', 'Window Seat'], x: 25, y: 72 },
+    { id: 'spot-leaf', name: 'Garden Lawn', icon: 'leaf', activeCount: 0, limit: 5, description: 'Open garden fields', subZones: ['Foliage path', 'East Lawn'], x: 32, y: 30 },
+    { id: 'spot-book', name: 'Library Balcony', icon: 'book', activeCount: 0, limit: 4, description: 'Quiet research balcony', subZones: ['Study Room C', 'Balcony Corner'], x: 60, y: 28 },
     { id: 'spot-utensils', name: 'Campus Diner', icon: 'utensils', activeCount: 0, limit: 6, description: 'Commercial hot food canteen', subZones: ['Main Counter'], x: 44, y: 55 },
     { id: 'spot-home', name: 'Common Room', icon: 'home', activeCount: 0, limit: 12, description: 'Residential hallway lounge', subZones: ['Couch Area'], x: 65, y: 78 }
   ]);
@@ -241,11 +243,11 @@ export default function App() {
       if (snapshot.empty) {
         const batch = writeBatch(db);
         const initialUsers = [
-          { id: 'usr_priya_sharma_gmail_com', name: 'Priya Sharma', avatar: 'PS', avatarColor: 'from-amber-400 to-orange-500', trustScore: 4.7, title: 'Campus Legend', statusText: 'Anyone want to discuss machine learning papers?', statusType: 'Studying', location: 'Library Balcony', timeAgo: '59m', email: 'priya.sharma@gmail.com' },
-          { id: 'usr_arjun_mehta_gmail_com', name: 'Arjun Mehta', avatar: 'AM', avatarColor: 'from-emerald-400 to-teal-500', trustScore: 4.2, title: 'Icebreaker', statusText: 'Bored and up for any conversation', statusType: 'Bored', location: 'Campus Canteen', timeAgo: '29m', email: 'arjun.mehta@gmail.com' },
-          { id: 'usr_nisha_patel_gmail_com', name: 'Nisha Patel', avatar: 'NP', avatarColor: 'from-purple-500 to-indigo-500', trustScore: 4.9, title: 'Connector', statusText: 'Looking for someone to explore the garden with', statusType: 'Exploring', location: 'Garden Lawn', timeAgo: '44m', email: 'nisha.patel@gmail.com' },
-          { id: 'usr_rohan_kumar_gmail_com', name: 'Rohan Kumar', avatar: 'RK', avatarColor: 'from-rose-400 to-pink-500', trustScore: 3.8, title: 'Social Starter', statusText: 'Hungry — does anyone want to grab a bite?', statusType: 'Hungry', location: 'Campus Canteen', timeAgo: '14m', email: 'rohan.kumar@gmail.com' },
-          { id: 'usr_kavya_reddy_gmail_com', name: 'Kavya Reddy', avatar: 'KR', avatarColor: 'from-sky-400 to-blue-500', trustScore: 4.5, title: 'Vibe Curator', statusText: 'Enjoying premium coffee and writing some hooks', statusType: 'Studying', location: 'Campus Canteen', timeAgo: '2m', email: 'kavya.reddy@gmail.com' }
+          { id: 'usr_priya_sharma_gmail_com', name: 'Priya Sharma', avatar: 'PS', avatarColor: 'from-amber-400 to-orange-500', trustScore: 4.7, title: 'Campus Legend', statusText: '', statusType: '', location: '', timeAgo: '', email: 'priya.sharma@gmail.com' },
+          { id: 'usr_arjun_mehta_gmail_com', name: 'Arjun Mehta', avatar: 'AM', avatarColor: 'from-emerald-400 to-teal-500', trustScore: 4.2, title: 'Icebreaker', statusText: '', statusType: '', location: '', timeAgo: '', email: 'arjun.mehta@gmail.com' },
+          { id: 'usr_nisha_patel_gmail_com', name: 'Nisha Patel', avatar: 'NP', avatarColor: 'from-purple-500 to-indigo-500', trustScore: 4.9, title: 'Connector', statusText: '', statusType: '', location: '', timeAgo: '', email: 'nisha.patel@gmail.com' },
+          { id: 'usr_rohan_kumar_gmail_com', name: 'Rohan Kumar', avatar: 'RK', avatarColor: 'from-rose-400 to-pink-500', trustScore: 3.8, title: 'Social Starter', statusText: '', statusType: '', location: '', timeAgo: '', email: 'rohan.kumar@gmail.com' },
+          { id: 'usr_kavya_reddy_gmail_com', name: 'Kavya Reddy', avatar: 'KR', avatarColor: 'from-sky-400 to-blue-500', trustScore: 4.5, title: 'Vibe Curator', statusText: '', statusType: '', location: '', timeAgo: '', email: 'kavya.reddy@gmail.com' }
         ];
         initialUsers.forEach((u) => {
           batch.set(doc(db, 'users', u.id), u);
@@ -277,9 +279,9 @@ export default function App() {
       if (snapshot.empty) {
         const batch = writeBatch(db);
         const initialHotspots = [
-          { id: 'spot-coffee', name: 'Campus Canteen', icon: 'coffee', activeCount: 3, limit: 10, description: 'Coffee block & canteen rooms', subZones: ['Table 12', 'Window Seat'], x: 25, y: 72 },
-          { id: 'spot-leaf', name: 'Garden Lawn', icon: 'leaf', activeCount: 1, limit: 5, description: 'Open garden fields', subZones: ['Foliage path', 'East Lawn'], x: 32, y: 30 },
-          { id: 'spot-book', name: 'Library Balcony', icon: 'book', activeCount: 1, limit: 4, description: 'Quiet research balcony', subZones: ['Study Room C', 'Balcony Corner'], x: 60, y: 28 },
+          { id: 'spot-coffee', name: 'Campus Canteen', icon: 'coffee', activeCount: 0, limit: 10, description: 'Coffee block & canteen rooms', subZones: ['Table 12', 'Window Seat'], x: 25, y: 72 },
+          { id: 'spot-leaf', name: 'Garden Lawn', icon: 'leaf', activeCount: 0, limit: 5, description: 'Open garden fields', subZones: ['Foliage path', 'East Lawn'], x: 32, y: 30 },
+          { id: 'spot-book', name: 'Library Balcony', icon: 'book', activeCount: 0, limit: 4, description: 'Quiet research balcony', subZones: ['Study Room C', 'Balcony Corner'], x: 60, y: 28 },
           { id: 'spot-utensils', name: 'Campus Diner', icon: 'utensils', activeCount: 0, limit: 6, description: 'Commercial hot food canteen', subZones: ['Main Counter'], x: 44, y: 55 },
           { id: 'spot-home', name: 'Common Room', icon: 'home', activeCount: 0, limit: 12, description: 'Residential hallway lounge', subZones: ['Couch Area'], x: 65, y: 78 }
         ];
