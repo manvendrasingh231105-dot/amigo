@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
-import { BarChart3, Trophy, Lock, Zap } from 'lucide-react';
-import { Poll, PollOptionTotal, PollWager } from '../types';
+import React, { useState, useEffect } from 'react';
+import { BarChart3, Trophy, Lock, Zap, Clock, AlertCircle } from 'lucide-react';
+import { Poll, PollWager } from '../types';
 
 interface PredictionsPanelProps {
   polls: Poll[];
-  pollOptionTotals: Record<string, PollOptionTotal[]>;
   pollWagers: Record<string, PollWager[]>;
   myEmail: string;
   myXp: number;
@@ -16,9 +15,19 @@ function formatXp(n: number): string {
   return String(Math.round(n));
 }
 
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return 'Closed';
+  const totalSec = Math.floor(ms / 1000);
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h left`;
+  if (h > 0) return `${h}h ${m}m left`;
+  return `${m}m left`;
+}
+
 export default function PredictionsPanel({
   polls,
-  pollOptionTotals,
   pollWagers,
   myEmail,
   myXp,
@@ -26,6 +35,15 @@ export default function PredictionsPanel({
 }: PredictionsPanelProps) {
   const [selectedOption, setSelectedOption] = useState<Record<string, string>>({});
   const [wagerAmount, setWagerAmount] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<Record<string, string>>({});
+  const [now, setNow] = useState(() => Date.now());
+
+  // Tick every 30s so countdowns and the "deadline passed" state stay live
+  // without needing a manual refresh.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
 
   // Show open/closed polls first, resolved ones after
   const sortedPolls = [...polls].sort((a, b) => {
@@ -55,14 +73,25 @@ export default function PredictionsPanel({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl">
         {sortedPolls.map(poll => {
-          const totals = pollOptionTotals[poll.id] || [];
-          const totalPool = totals.reduce((sum, t) => sum + (t.totalXp || 0), 0);
+          const totals = poll.totals || {};
+          const totalPool = Object.values(totals).reduce((sum: number, v: any) => sum + (v || 0), 0);
           const myWager = (pollWagers[poll.id] || []).find(w => w.userEmail?.toLowerCase() === myEmail.toLowerCase());
-          const leadingTotal = totals.reduce((max, t) => Math.max(max, t.totalXp || 0), 0);
-          const leadingOption = totals.find(t => t.totalXp === leadingTotal && leadingTotal > 0);
+          const leadingTotal = Object.values(totals).reduce((max: number, v: any) => Math.max(max, v || 0), 0);
+          const leadingOptionId = Object.keys(totals).find(optId => totals[optId] === leadingTotal && leadingTotal > 0);
+
+          const deadlineMs = poll.closesAt && typeof (poll.closesAt as any).toDate === 'function'
+            ? poll.closesAt.toDate().getTime() - now
+            : null;
+          const isPastDeadline = deadlineMs != null && deadlineMs <= 0;
+          // Betting is only actually possible if the poll is 'open' AND (no
+          // deadline set, or the deadline hasn't passed) - matches exactly
+          // what firestore.rules enforces server-side, so the UI never
+          // offers a wager that would just get rejected.
+          const canWager = poll.status === 'open' && !isPastDeadline && !myWager;
 
           const selOpt = selectedOption[poll.id] || (myWager?.optionId ?? poll.options[0]?.id);
           const amtStr = wagerAmount[poll.id] ?? '';
+          const err = formError[poll.id];
 
           return (
             <div key={poll.id} className="bg-white border-2 border-[#1a1a1a] rounded-2xl p-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] space-y-3">
@@ -72,41 +101,48 @@ export default function PredictionsPanel({
                   {poll.description && <p className="text-[10px] text-gray-400 font-semibold mt-0.5">{poll.description}</p>}
                 </div>
                 <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border shrink-0 ${
-                  poll.status === 'open' ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                  : poll.status === 'closed' ? 'bg-amber-50 text-amber-700 border-amber-300'
-                  : 'bg-gray-100 text-gray-500 border-gray-300'
+                  poll.status === 'open' && !isPastDeadline ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                  : poll.status === 'resolved' ? 'bg-gray-100 text-gray-500 border-gray-300'
+                  : 'bg-amber-50 text-amber-700 border-amber-300'
                 }`}>
-                  {poll.status}
+                  {poll.status === 'open' && isPastDeadline ? 'closed' : poll.status}
                 </span>
               </div>
 
-              <p className="text-[10px] font-mono font-bold text-gray-400">
-                {formatXp(totalPool)} XP contributed
-                {poll.status !== 'resolved' && leadingOption && totalPool > 0 && (
-                  <span className="text-[#FF6B35]"> · leading: {poll.options.find(o => o.id === leadingOption.optionId)?.label} ({Math.round((leadingOption.totalXp / totalPool) * 100)}%)</span>
+              <p className="text-[10px] font-mono font-bold text-gray-400 flex flex-wrap items-center gap-x-2">
+                <span>{formatXp(totalPool)} XP contributed</span>
+                {poll.status !== 'resolved' && leadingOptionId && totalPool > 0 && (
+                  <span className="text-[#FF6B35]">leading: {poll.options.find(o => o.id === leadingOptionId)?.label} ({Math.round((leadingTotal / totalPool) * 100)}%)</span>
+                )}
+                {poll.status === 'open' && deadlineMs != null && (
+                  <span className={`flex items-center gap-1 ${isPastDeadline ? 'text-gray-400' : 'text-indigo-600'}`}>
+                    <Clock size={10} /> {formatCountdown(deadlineMs)}
+                  </span>
                 )}
               </p>
 
               <div className="space-y-2">
                 {poll.options.map(opt => {
-                  const optTotal = totals.find(t => t.optionId === opt.id)?.totalXp || 0;
+                  const optTotal = totals[opt.id] || 0;
                   const pct = totalPool > 0 ? Math.round((optTotal / totalPool) * 100) : 0;
                   const odds = optTotal > 0 ? (totalPool / optTotal).toFixed(1) : '—';
                   const isWinner = poll.status === 'resolved' && poll.winningOptionId === opt.id;
                   const isMyPick = myWager?.optionId === opt.id;
-                  const selectable = poll.status === 'open' && !myWager;
 
                   return (
                     <div key={opt.id}>
                       <button
-                        disabled={!selectable}
-                        onClick={() => setSelectedOption(prev => ({ ...prev, [poll.id]: opt.id }))}
+                        disabled={!canWager}
+                        onClick={() => {
+                          setSelectedOption(prev => ({ ...prev, [poll.id]: opt.id }));
+                          setFormError(prev => ({ ...prev, [poll.id]: '' }));
+                        }}
                         className={`w-full text-left px-3 py-2 rounded-xl border-2 transition flex items-center justify-between gap-2 ${
                           isWinner ? 'bg-emerald-50 border-emerald-500'
                           : isMyPick ? 'bg-[#FFF4E5] border-[#FF6B35]'
-                          : selOpt === opt.id && selectable ? 'bg-[#FFF4E5] border-[#FF6B35]'
+                          : selOpt === opt.id && canWager ? 'bg-[#FFF4E5] border-[#FF6B35]'
                           : 'bg-[#fdfaf7] border-gray-200'
-                        } ${selectable ? 'cursor-pointer hover:border-[#1a1a1a]' : 'cursor-default'}`}
+                        } ${canWager ? 'cursor-pointer hover:border-[#1a1a1a]' : 'cursor-default'}`}
                       >
                         <span className="text-xs font-bold text-[#1a1a1a] flex items-center gap-1.5">
                           {opt.label}
@@ -123,40 +159,64 @@ export default function PredictionsPanel({
               </div>
 
               {/* Wager controls */}
-              {poll.status === 'open' && !myWager && (
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="number"
-                    min={1}
-                    max={myXp}
-                    placeholder={`Up to ${formatXp(myXp)} XP`}
-                    value={amtStr}
-                    onChange={(e) => setWagerAmount(prev => ({ ...prev, [poll.id]: e.target.value }))}
-                    className="flex-1 text-xs font-bold bg-[#fdfaf7] border-2 border-[#1a1a1a] rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#FF6B35]"
-                  />
-                  <button
-                    onClick={() => {
-                      const amt = parseInt(amtStr, 10);
-                      if (!selOpt || isNaN(amt) || amt <= 0) return;
-                      onPlaceWager(poll.id, selOpt, amt);
-                      setWagerAmount(prev => ({ ...prev, [poll.id]: '' }));
-                    }}
-                    className="px-3 py-1.5 bg-[#FF6B35] hover:bg-orange-600 text-white font-black text-[10px] rounded-lg border-2 border-[#1a1a1a] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] uppercase transition cursor-pointer flex items-center gap-1 shrink-0"
-                  >
-                    <Zap size={11} /> Wager
-                  </button>
+              {canWager && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={myXp}
+                      placeholder={`Up to ${formatXp(myXp)} XP`}
+                      value={amtStr}
+                      onChange={(e) => {
+                        setWagerAmount(prev => ({ ...prev, [poll.id]: e.target.value }));
+                        setFormError(prev => ({ ...prev, [poll.id]: '' }));
+                      }}
+                      className={`flex-1 text-xs font-bold bg-[#fdfaf7] border-2 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#FF6B35] ${err ? 'border-red-400' : 'border-[#1a1a1a]'}`}
+                    />
+                    <button
+                      onClick={() => {
+                        if (!selOpt) {
+                          setFormError(prev => ({ ...prev, [poll.id]: 'Pick an option first.' }));
+                          return;
+                        }
+                        const amt = parseInt(amtStr, 10);
+                        if (!amtStr.trim() || isNaN(amt) || amt <= 0) {
+                          setFormError(prev => ({ ...prev, [poll.id]: 'Enter how much XP to wager.' }));
+                          return;
+                        }
+                        if (amt > myXp) {
+                          setFormError(prev => ({ ...prev, [poll.id]: `You only have ${formatXp(myXp)} XP available.` }));
+                          return;
+                        }
+                        setFormError(prev => ({ ...prev, [poll.id]: '' }));
+                        onPlaceWager(poll.id, selOpt, amt);
+                        setWagerAmount(prev => ({ ...prev, [poll.id]: '' }));
+                      }}
+                      className="px-3 py-1.5 bg-[#FF6B35] hover:bg-orange-600 text-white font-black text-[10px] rounded-lg border-2 border-[#1a1a1a] shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] uppercase transition cursor-pointer flex items-center gap-1 shrink-0"
+                    >
+                      <Zap size={11} /> Wager
+                    </button>
+                  </div>
+                  {err && (
+                    <p className="text-[10px] font-bold text-red-600 flex items-center gap-1">
+                      <AlertCircle size={10} /> {err}
+                    </p>
+                  )}
                 </div>
               )}
 
-              {poll.status === 'open' && myWager && (
+              {poll.status === 'open' && !isPastDeadline && myWager && (
                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5">
                   <Lock size={11} /> Locked in {formatXp(myWager.amount)} XP on this poll — results pending.
                 </div>
               )}
 
-              {poll.status === 'closed' && (
+              {((poll.status === 'open' && isPastDeadline) || poll.status === 'closed') && (
                 <p className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                  Betting closed — awaiting results.
+                  {myWager
+                    ? `Betting closed. Your ${formatXp(myWager.amount)} XP wager is locked in — awaiting results.`
+                    : 'Betting closed — awaiting results.'}
                 </p>
               )}
 

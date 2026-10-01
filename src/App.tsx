@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Hotspot, Event, PrivacySettings, UserStats, MeetRequest, ChatMessage, Poll, PollOption, PollOptionTotal, PollWager } from './types';
+import { User, Hotspot, Event, PrivacySettings, UserStats, MeetRequest, ChatMessage, Poll, PollOption, PollWager } from './types';
 import CampusWebPortal from './components/CampusWebPortal';
 import AuthGate from './components/AuthGate';
 import { Info, Wifi, BookOpen, Layers, LogOut, Key, ShieldCheck } from 'lucide-react';
@@ -180,11 +180,11 @@ export default function App() {
   // deleted on reject/withdraw/conclude).
   const [meetRequests, setMeetRequests] = useState<MeetRequest[]>([]);
 
-  // Polls & Predictions. optionTotals and wagers live in per-poll
-  // subcollections, so they're synced via collectionGroup listeners and
-  // grouped by pollId client-side (see the effect below).
+  // Polls & Predictions. Option totals live directly on each poll doc (see
+  // types.ts), so they arrive via the plain `polls` listener below. Wagers
+  // still live in a per-poll subcollection, synced via a collectionGroup
+  // listener and grouped by pollId client-side.
   const [polls, setPolls] = useState<Poll[]>([]);
-  const [pollOptionTotals, setPollOptionTotals] = useState<Record<string, PollOptionTotal[]>>({});
   const [pollWagers, setPollWagers] = useState<Record<string, PollWager[]>>({});
 
   // Simulating administrative alerts pushed live across WS STOMP pings
@@ -348,19 +348,6 @@ export default function App() {
       handleFirestoreError(error, OperationType.LIST, 'polls');
     });
 
-    const unsubscribeOptionTotals = onSnapshot(collectionGroup(db, 'optionTotals'), (snapshot) => {
-      const grouped: Record<string, PollOptionTotal[]> = {};
-      snapshot.forEach((d) => {
-        const pollId = d.ref.parent.parent?.id;
-        if (!pollId) return;
-        if (!grouped[pollId]) grouped[pollId] = [];
-        grouped[pollId].push(d.data() as PollOptionTotal);
-      });
-      setPollOptionTotals(grouped);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'poll option totals');
-    });
-
     const unsubscribeWagers = onSnapshot(collectionGroup(db, 'wagers'), (snapshot) => {
       const grouped: Record<string, PollWager[]> = {};
       snapshot.forEach((d) => {
@@ -380,7 +367,6 @@ export default function App() {
       unsubscribeEvents();
       unsubscribeMeetRequests();
       unsubscribePolls();
-      unsubscribeOptionTotals();
       unsubscribeWagers();
     };
   }, [sessionUser, firebaseUser]);
@@ -642,7 +628,7 @@ export default function App() {
 
   const showAdminNotice = (message: string) => {
     setAdminNotice(message);
-    setTimeout(() => setAdminNotice(null), 4000);
+    setTimeout(() => setAdminNotice(null), 7000);
   };
 
   // ===== MEET REQUESTS =====
@@ -721,7 +707,7 @@ export default function App() {
 
   // ===== POLLS & PREDICTIONS =====
 
-  const handleAdminCreatePoll = async (title: string, description: string, optionLabels: string[]) => {
+  const handleAdminCreatePoll = async (title: string, description: string, optionLabels: string[], closesInMinutes?: number) => {
     if (!sessionUser || !title.trim() || optionLabels.length < 2) return;
     try {
       const pollRef = doc(collection(db, 'polls'));
@@ -729,47 +715,48 @@ export default function App() {
         id: `opt${i}-${pollRef.id.slice(0, 6)}`,
         label: label.trim()
       }));
+      const totals: Record<string, number> = {};
+      options.forEach(opt => { totals[opt.id] = 0; });
       const poll: Poll = {
         id: pollRef.id,
         title: title.trim(),
         description: description.trim(),
         options,
+        totals,
         status: 'open',
         createdAt: new Date().toISOString(),
-        createdBy: sessionUser.email
+        createdBy: sessionUser.email,
+        ...(closesInMinutes && closesInMinutes > 0
+          ? { closesAt: new Date(Date.now() + closesInMinutes * 60000) as any }
+          : {})
       };
       await setDoc(pollRef, poll);
-      await Promise.all(options.map(opt =>
-        setDoc(doc(db, 'polls', pollRef.id, 'optionTotals', opt.id), { optionId: opt.id, totalXp: 0 })
-      ));
       showAdminNotice(`Poll "${poll.title}" created.`);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Create poll failed:', e);
-      showAdminNotice('Failed to create poll - check console for details.');
+      showAdminNotice(`Failed to create poll: ${e?.message || e?.code || 'unknown error'}`);
     }
   };
 
-  const handleAdminEditPoll = async (pollId: string, updates: Partial<Poll>) => {
+  const handleAdminEditPoll = async (pollId: string, updates: Partial<Poll> & { closesAt?: Date | null }) => {
     try {
       await updateDoc(doc(db, 'polls', pollId), updates as any);
       showAdminNotice('Poll updated.');
-    } catch (e) {
+    } catch (e: any) {
       console.error('Edit poll failed:', e);
-      showAdminNotice('Failed to update poll - check console for details.');
+      showAdminNotice(`Failed to update poll: ${e?.message || e?.code || 'unknown error'}`);
     }
   };
 
   const handleAdminDeletePoll = async (pollId: string) => {
     try {
-      const totalsSnap = await getDocs(collection(db, 'polls', pollId, 'optionTotals'));
-      await Promise.all(totalsSnap.docs.map(d => deleteDoc(d.ref)));
       const wagersSnap = await getDocs(collection(db, 'polls', pollId, 'wagers'));
       await Promise.all(wagersSnap.docs.map(d => deleteDoc(d.ref)));
       await deleteDoc(doc(db, 'polls', pollId));
       showAdminNotice('Poll deleted.');
-    } catch (e) {
+    } catch (e: any) {
       console.error('Delete poll failed:', e);
-      showAdminNotice('Failed to delete poll - check console for details.');
+      showAdminNotice(`Failed to delete poll: ${e?.message || e?.code || 'unknown error'}`);
     }
   };
 
@@ -780,10 +767,10 @@ export default function App() {
   // since only admins can write XP to other users' profiles.
   const handleAdminResolvePoll = async (pollId: string, winningOptionId: string) => {
     try {
-      const totalsSnap = await getDocs(collection(db, 'polls', pollId, 'optionTotals'));
-      const totals: Record<string, number> = {};
-      totalsSnap.forEach(d => { totals[d.id] = (d.data().totalXp || 0); });
-      const totalPool = Object.values(totals).reduce((a, b) => a + b, 0);
+      const pollSnap = await getDoc(doc(db, 'polls', pollId));
+      if (!pollSnap.exists()) return;
+      const totals: Record<string, number> = pollSnap.data().totals || {};
+      const totalPool = Object.values(totals).reduce((a: number, b: any) => a + (b || 0), 0);
       const winningPool = totals[winningOptionId] || 0;
 
       const wagersSnap = await getDocs(collection(db, 'polls', pollId, 'wagers'));
@@ -805,9 +792,9 @@ export default function App() {
 
       await updateDoc(doc(db, 'polls', pollId), { status: 'resolved', winningOptionId });
       showAdminNotice('Poll resolved - payouts distributed to winners.');
-    } catch (e) {
+    } catch (e: any) {
       console.error('Resolve poll failed:', e);
-      showAdminNotice('Failed to resolve poll - check console for details.');
+      showAdminNotice(`Failed to resolve poll: ${e?.message || e?.code || 'unknown error'}`);
     }
   };
 
@@ -833,15 +820,23 @@ export default function App() {
         createdAt: new Date().toISOString()
       };
       await setDoc(doc(db, 'polls', pollId, 'wagers', myId), wager);
-      await updateDoc(doc(db, 'polls', pollId, 'optionTotals', optionId), { totalXp: increment(amount) });
+      // A single atomic increment on the poll doc's own totals map - this
+      // is what previously lived in a separate optionTotals subcollection,
+      // synced via a collectionGroup listener that turned out to be
+      // unreliable. This is simpler and rides on the same plain `polls`
+      // listener every client already has open.
+      await updateDoc(doc(db, 'polls', pollId), { [`totals.${optionId}`]: increment(amount) });
       setStats(prev => {
         const newXp = prev.xp - amount;
         return { ...prev, xp: newXp, level: computeLevelFromXp(newXp) };
       });
       showAdminNotice(`Wager placed: ${amount} XP!`);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Place wager failed:', e);
-      showAdminNotice('Failed to place wager - check console for details.');
+      // Surface the actual Firebase error (e.g. "permission-denied" if the
+      // poll's deadline just passed, or rules aren't deployed yet) instead
+      // of a generic message, so it's actually debuggable from the UI.
+      showAdminNotice(`Wager failed: ${e?.message || e?.code || 'unknown error'}`);
     }
   };
 
@@ -1085,7 +1080,6 @@ export default function App() {
             onRejectMeetRequest={handleRejectMeetRequest}
             onConcludeMeet={handleConcludeMeet}
             polls={polls}
-            pollOptionTotals={pollOptionTotals}
             pollWagers={pollWagers}
             onPlaceWager={handlePlaceWager}
             onAdminCreatePoll={handleAdminCreatePoll}

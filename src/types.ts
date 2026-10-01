@@ -1,3 +1,5 @@
+import { Timestamp } from 'firebase/firestore';
+
 export interface User {
   id: string;
   name: string;
@@ -118,16 +120,17 @@ export interface Poll {
   title: string;
   description?: string;
   options: PollOption[];
+  // Live XP pool per option, keyed by optionId - stored directly on the
+  // poll doc (not a separate subcollection) so it updates atomically via
+  // a single field increment and syncs through the same plain listener
+  // that already watches the polls collection - no collectionGroup query
+  // involved, which is one less thing that can silently misbehave.
+  totals: Record<string, number>;
   status: 'open' | 'closed' | 'resolved';
   winningOptionId?: string;
   createdAt: string;
   createdBy: string; // admin email
-}
-
-// polls/{pollId}/optionTotals/{optionId} - live XP pool per option
-export interface PollOptionTotal {
-  optionId: string;
-  totalXp: number;
+  closesAt?: Timestamp | null; // Firestore Timestamp (not a string) - after this, new wagers are rejected server-side even if status still says 'open'
 }
 
 // polls/{pollId}/wagers/{userSafeId} - one wager per user per poll.

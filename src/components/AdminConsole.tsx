@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Shield, Trash2, Ban, CheckCircle2, Zap, Plus, Pencil, X, UserPlus, UserMinus, Trophy, Lock, Unlock } from 'lucide-react';
-import { User, Hotspot, Event, Poll, PollOptionTotal, PollWager } from '../types';
+import { User, Hotspot, Event, Poll, PollWager } from '../types';
 import { SUPER_ADMIN_EMAIL } from '../utils';
 
 interface AdminConsoleProps {
@@ -23,15 +23,22 @@ interface AdminConsoleProps {
 
   // Polls & Predictions
   polls: Poll[];
-  pollOptionTotals: Record<string, PollOptionTotal[]>;
   pollWagers: Record<string, PollWager[]>;
-  onCreatePoll: (title: string, description: string, optionLabels: string[]) => void;
-  onEditPoll: (pollId: string, updates: Partial<Poll>) => void;
+  onCreatePoll: (title: string, description: string, optionLabels: string[], closesInMinutes?: number) => void;
+  onEditPoll: (pollId: string, updates: Partial<Poll> & { closesAt?: Date | null }) => void;
   onDeletePoll: (pollId: string) => void;
   onResolvePoll: (pollId: string, winningOptionId: string) => void;
 }
 
 const ICONS = ['coffee', 'leaf', 'sun', 'book', 'utensils', 'home'];
+
+// Formats a Date as "YYYY-MM-DDTHH:mm" in the browser's local timezone,
+// which is the exact string format <input type="datetime-local"> expects.
+// Using toISOString() directly would shift the displayed time to UTC.
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default function AdminConsole({
   users,
@@ -51,7 +58,6 @@ export default function AdminConsole({
   onGrantAdmin,
   onRevokeAdmin,
   polls,
-  pollOptionTotals,
   pollWagers,
   onCreatePoll,
   onEditPoll,
@@ -73,8 +79,10 @@ export default function AdminConsole({
   const [newPollTitle, setNewPollTitle] = useState('');
   const [newPollDesc, setNewPollDesc] = useState('');
   const [newPollOptions, setNewPollOptions] = useState(['', '']);
+  const [newPollDurationValue, setNewPollDurationValue] = useState('');
+  const [newPollDurationUnit, setNewPollDurationUnit] = useState<'minutes' | 'hours' | 'days'>('hours');
   const [editingPollId, setEditingPollId] = useState<string | null>(null);
-  const [pollDraft, setPollDraft] = useState<{ title?: string; description?: string }>({});
+  const [pollDraft, setPollDraft] = useState<{ title?: string; description?: string; closesAt?: Date | null }>({});
   const [expandedPollId, setExpandedPollId] = useState<string | null>(null);
 
   // Only this account can grant/revoke admin access for other people.
@@ -549,14 +557,46 @@ export default function AdminConsole({
                   </button>
                 )}
               </div>
+
+              <div>
+                <span className="text-[9px] font-black text-gray-400 uppercase font-mono block mb-1">Betting window (optional)</span>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="Leave blank for no deadline"
+                    value={newPollDurationValue}
+                    onChange={(e) => setNewPollDurationValue(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-lg text-xs font-bold border-2 border-[#1a1a1a] focus:outline-none focus:border-indigo-600"
+                  />
+                  <select
+                    value={newPollDurationUnit}
+                    onChange={(e) => setNewPollDurationUnit(e.target.value as any)}
+                    className="px-3 py-2 rounded-lg text-xs font-bold border-2 border-[#1a1a1a] focus:outline-none focus:border-indigo-600"
+                  >
+                    <option value="minutes">Minutes</option>
+                    <option value="hours">Hours</option>
+                    <option value="days">Days</option>
+                  </select>
+                </div>
+                <p className="text-[9px] text-gray-400 font-semibold mt-1">
+                  Wagering automatically stops once this window closes, even if you forget to close it manually.
+                </p>
+              </div>
+
               <button
                 onClick={() => {
                   const cleanOptions = newPollOptions.map(o => o.trim()).filter(Boolean);
                   if (!newPollTitle.trim() || cleanOptions.length < 2) return;
-                  onCreatePoll(newPollTitle.trim(), newPollDesc.trim(), cleanOptions);
+                  const durationNum = parseFloat(newPollDurationValue);
+                  const closesInMinutes = !isNaN(durationNum) && durationNum > 0
+                    ? durationNum * (newPollDurationUnit === 'minutes' ? 1 : newPollDurationUnit === 'hours' ? 60 : 1440)
+                    : undefined;
+                  onCreatePoll(newPollTitle.trim(), newPollDesc.trim(), cleanOptions, closesInMinutes);
                   setNewPollTitle('');
                   setNewPollDesc('');
                   setNewPollOptions(['', '']);
+                  setNewPollDurationValue('');
                   setShowNewPollForm(false);
                 }}
                 className="px-3 py-2 rounded-xl text-xs font-black border-2 border-[#1a1a1a] bg-[#FF6B35] text-white hover:bg-orange-600 transition cursor-pointer"
@@ -571,8 +611,8 @@ export default function AdminConsole({
           )}
 
           {[...polls].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(poll => {
-            const totals = pollOptionTotals[poll.id] || [];
-            const totalPool = totals.reduce((sum, t) => sum + (t.totalXp || 0), 0);
+            const totals = poll.totals || {};
+            const totalPool = Object.values(totals).reduce((sum: number, v: any) => sum + (v || 0), 0);
             const wagers = pollWagers[poll.id] || [];
             const isExpanded = expandedPollId === poll.id;
 
@@ -592,6 +632,22 @@ export default function AdminConsole({
                       className="w-full px-3 py-2 rounded-lg text-xs font-bold border-2 border-[#1a1a1a] focus:outline-none focus:border-indigo-600"
                       placeholder="Description"
                     />
+                    <div>
+                      <span className="text-[9px] font-black text-gray-400 uppercase font-mono block mb-1">Betting deadline (blank = no deadline)</span>
+                      <input
+                        type="datetime-local"
+                        value={
+                          pollDraft.closesAt !== undefined
+                            ? (pollDraft.closesAt ? toLocalInputValue(pollDraft.closesAt) : '')
+                            : (poll.closesAt && typeof (poll.closesAt as any).toDate === 'function' ? toLocalInputValue(poll.closesAt.toDate()) : '')
+                        }
+                        onChange={(e) => setPollDraft(prev => ({
+                          ...prev,
+                          closesAt: e.target.value ? new Date(e.target.value) : null
+                        }))}
+                        className="w-full px-3 py-2 rounded-lg text-xs font-bold border-2 border-[#1a1a1a] focus:outline-none focus:border-indigo-600"
+                      />
+                    </div>
                     <div className="flex gap-2">
                       <button
                         onClick={() => { onEditPoll(poll.id, pollDraft); setEditingPollId(null); setPollDraft({}); }}
@@ -622,7 +678,18 @@ export default function AdminConsole({
                           </span>
                         </p>
                         <p className="text-[10px] text-gray-400 font-semibold truncate">{poll.description}</p>
-                        <p className="text-[10px] font-bold text-gray-500 mt-0.5">{Math.round(totalPool)} XP pool · {wagers.length} wagers</p>
+                        <p className="text-[10px] font-bold text-gray-500 mt-0.5">
+                          {Math.round(totalPool)} XP pool · {wagers.length} wagers
+                          {poll.closesAt && typeof (poll.closesAt as any).toDate === 'function' && (() => {
+                            const deadlineDate = poll.closesAt.toDate();
+                            const passed = deadlineDate.getTime() < Date.now();
+                            return (
+                              <span className={passed ? ' text-red-500' : ' text-indigo-600'}>
+                                {' · '}{passed ? 'deadline passed' : `closes ${deadlineDate.toLocaleString()}`}
+                              </span>
+                            );
+                          })()}
+                        </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <button
@@ -649,7 +716,7 @@ export default function AdminConsole({
                     {/* Option rows with close/resolve controls */}
                     <div className="space-y-1.5">
                       {poll.options.map(opt => {
-                        const optTotal = totals.find(t => t.optionId === opt.id)?.totalXp || 0;
+                        const optTotal = totals[opt.id] || 0;
                         const isWinner = poll.winningOptionId === opt.id;
                         return (
                           <div key={opt.id} className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${isWinner ? 'bg-emerald-50 border-emerald-300' : 'bg-gray-50 border-gray-200'}`}>

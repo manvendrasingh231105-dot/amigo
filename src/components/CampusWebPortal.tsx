@@ -34,7 +34,7 @@ import {
   Info,
   Calendar
 } from 'lucide-react';
-import { User as AmigoUser, Hotspot, PrivacySettings, UserStats, Achievement, Event, MeetRequest, ChatMessage, Poll, PollOptionTotal, PollWager } from '../types';
+import { User as AmigoUser, Hotspot, PrivacySettings, UserStats, Achievement, Event, MeetRequest, ChatMessage, Poll, PollWager } from '../types';
 import PredictionsPanel from './PredictionsPanel';
 import { computeLevelFromXp, SUPER_ADMIN_EMAIL } from '../utils';
 import AdminConsole from './AdminConsole';
@@ -80,11 +80,10 @@ interface DesktopWebAppProps {
 
   // Polls & Predictions
   polls: Poll[];
-  pollOptionTotals: Record<string, PollOptionTotal[]>;
   pollWagers: Record<string, PollWager[]>;
   onPlaceWager: (pollId: string, optionId: string, amount: number) => void;
-  onAdminCreatePoll: (title: string, description: string, optionLabels: string[]) => void;
-  onAdminEditPoll: (pollId: string, updates: Partial<Poll>) => void;
+  onAdminCreatePoll: (title: string, description: string, optionLabels: string[], closesInMinutes?: number) => void;
+  onAdminEditPoll: (pollId: string, updates: Partial<Poll> & { closesAt?: Date | null }) => void;
   onAdminDeletePoll: (pollId: string) => void;
   onAdminResolvePoll: (pollId: string, winningOptionId: string) => void;
   
@@ -138,7 +137,6 @@ export default function DesktopWebApp({
   onRejectMeetRequest,
   onConcludeMeet,
   polls,
-  pollOptionTotals,
   pollWagers,
   onPlaceWager,
   onAdminCreatePoll,
@@ -1276,7 +1274,6 @@ export default function DesktopWebApp({
         {webActiveTab === 'predictions' && (
           <PredictionsPanel
             polls={polls}
-            pollOptionTotals={pollOptionTotals}
             pollWagers={pollWagers}
             myEmail={sessionUser?.email || ''}
             myXp={stats.xp}
@@ -1485,7 +1482,6 @@ export default function DesktopWebApp({
             onGrantAdmin={onAdminGrantAdmin}
             onRevokeAdmin={onAdminRevokeAdmin}
             polls={polls}
-            pollOptionTotals={pollOptionTotals}
             pollWagers={pollWagers}
             onCreatePoll={onAdminCreatePoll}
             onEditPoll={onAdminEditPoll}
